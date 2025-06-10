@@ -1,0 +1,119 @@
+---
+# roles/traefik/templates/traefik.yml.j2
+# Static configuration for Traefik with security best practices
+api:
+  dashboard: true
+  debug: false
+  insecure: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+    # Rate limiting untuk mencegah abuse
+    http2:
+      maxConcurrentStreams: 100
+    transport:
+      respondingTimeouts:
+        readTimeout: "30s"
+        writeTimeout: "30s"
+        idleTimeout: "180s"
+    forwardedHeaders:
+      trustedIPs:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+        - "fc00::/7"
+        - "{{ cloudflare_ips | default([]) | join('", "') }}"
+
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+          - main: "{{ domain_name }}"
+            sans:
+              - "*.{{ domain_name }}"
+    http2:
+      maxConcurrentStreams: 100
+    transport:
+      respondingTimeouts:
+        readTimeout: "30s"
+        writeTimeout: "30s"
+        idleTimeout: "180s"
+
+  metrics:
+    address: ":8082"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: frontend
+    watch: true
+  file:
+    directory: /etc/traefik/configs
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: "{{ traefik_acme_email }}"
+      storage: /certs/acme.json
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
+        delayBeforeCheck: 10s
+      # Ethical: Use production Let's Encrypt
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+
+metrics:
+  prometheus:
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    entryPoint: metrics
+
+log:
+  level: INFO
+  filePath: /logs/traefik.log
+  format: json
+
+accessLog:
+  filePath: /logs/access.log
+  format: json
+  filters:
+    statusCodes:
+      - "200-299"
+      - "400-499"
+      - "500-599"
+  fields:
+    defaultMode: keep
+    names:
+      ClientUsername: drop
+    headers:
+      defaultMode: keep
+      names:
+        User-Agent: keep
+        Authorization: drop
+        Cookie: drop
+
+ping:
+  entryPoint: traefik
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false

@@ -1,0 +1,103 @@
+---
+# roles/monitoring/templates/prometheus-rules.yml.j2
+# Alerting rules with ethical considerations
+groups:
+  - name: summitethic_alerts
+    interval: 30s
+    rules:
+      # System alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 80% (current value: {{ $value }}%)"
+          
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 85% (current value: {{ $value }}%)"
+          
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: critical
+          category: storage
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is below 20% (current value: {{ $value }}%)"
+      
+      # Security alerts
+      - alert: SSHAuthenticationFailure
+        expr: increase(node_systemd_unit_state{name="ssh.service",state="failed"}[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+          ethical: privacy-preserving
+        annotations:
+          summary: "Multiple SSH authentication failures"
+          description: "More than 5 SSH authentication failures in 5 minutes"
+          
+      - alert: UnauthorizedDockerAccess
+        expr: increase(docker_unauthorized_access_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Unauthorized Docker access attempt"
+          description: "Unauthorized access to Docker API detected"
+          
+      # Ethical monitoring alerts
+      - alert: DataRetentionPolicyViolation
+        expr: prometheus_tsdb_storage_blocks_bytes / 1024 / 1024 / 1024 > 10
+        for: 1h
+        labels:
+          severity: warning
+          category: compliance
+          ethical: data-governance
+        annotations:
+          summary: "Data retention policy violation"
+          description: "Prometheus data size exceeds 10GB retention policy"
+          
+      - alert: PersonalDataDetected
+        expr: increase(personal_data_detection_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: privacy
+          ethical: data-protection
+        annotations:
+          summary: "Personal data detected in logs"
+          description: "Personal data pattern detected in application logs"
+      
+      # Service health
+      - alert: ServiceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 5 minutes"
+          
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, http_request_duration_seconds_bucket) > 2
+        for: 10m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High response time for {{ $labels.job }}"
+          description: "95th percentile response time is above 2 seconds"

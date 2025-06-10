@@ -1,0 +1,99 @@
+---
+# roles/traefik/templates/middlewares.yml.j2
+http:
+  middlewares:
+    # Security headers untuk semua layanan
+    security-headers:
+      headers:
+        sslRedirect: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        frameDeny: true
+        customFrameOptionsValue: "SAMEORIGIN"
+        contentSecurityPolicy: |
+          default-src 'self';
+          script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com;
+          style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+          font-src 'self' https://fonts.gstatic.com;
+          img-src 'self' data: https:;
+          connect-src 'self' https://api.{{ domain_name }};
+        permissionsPolicy: |
+          geolocation=(),
+          microphone=(),
+          camera=(),
+          payment=()
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex"
+          Server: "SummitEthic"
+
+    # Rate limiting untuk API
+    rate-limit-api:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: "1m"
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - "{{ trusted_ips | default([]) | join('", "') }}"
+
+    # Rate limiting untuk web
+    rate-limit-web:
+      rateLimit:
+        average: 200
+        burst: 400
+        period: "1m"
+        sourceCriterion:
+          ipStrategy:
+            excludedIPs:
+              - "{{ trusted_ips | default([]) | join('", "') }}"
+
+    # Basic auth untuk admin areas
+    admin-auth:
+      basicAuth:
+        usersFile: /etc/traefik/.htpasswd
+        realm: "SummitEthic Admin Area"
+
+    # Compress responses
+    compress:
+      compress:
+        excludedContentTypes:
+          - text/event-stream
+
+    # CORS untuk API
+    cors-api:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowOriginList:
+          - "https://{{ domain_name }}"
+          - "https://www.{{ domain_name }}"
+        accessControlAllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+        accessControlExposeHeaders:
+          - X-Total-Count
+          - X-Page-Count
+        accessControlMaxAge: 3600
+        addVaryHeader: true
+
+    # Retry logic
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: "100ms"
+
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.5"

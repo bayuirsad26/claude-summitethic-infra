@@ -1,0 +1,12 @@
+---
+# roles/docker/handlers/main.yml
+- name: restart docker
+  systemd:
+    name: docker
+    state: restarted
+    daemon_reload: yes
+
+- name: restart auditd
+  service:
+    name: auditd
+    state: restarted

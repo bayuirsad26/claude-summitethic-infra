@@ -1,0 +1,59 @@
+---
+# roles/traefik/templates/docker-compose.yml.j2
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+      - label:type:container_runtime_t
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - CF_API_EMAIL={{ cloudflare_email }}
+      - CF_DNS_API_TOKEN={{ cloudflare_api_token }}
+      - TRAEFIK_LOG_LEVEL=INFO
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./configs:/etc/traefik/configs:ro
+      - ./.htpasswd:/etc/traefik/.htpasswd:ro
+      - ./certs:/certs
+      - ./logs:/logs
+    labels:
+      - "traefik.enable=true"
+      # Dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.{{ domain_name }}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=admin-auth@file,security-headers@file"
+      # Metrics
+      - "traefik.http.routers.metrics.rule=Host(`traefik.{{ domain_name }}`) && PathPrefix(`/metrics`)"
+      - "traefik.http.routers.metrics.entrypoints=metrics"
+      - "traefik.http.routers.metrics.service=prometheus@internal"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=traefik,environment={{ environment | default('production') }}"
+
+networks:
+  frontend:
+    external: true
+  backend:
+    external: true

@@ -1,0 +1,108 @@
+---
+# roles/monitoring/tasks/main.yml
+# Complete monitoring stack for SummitEthic with ethical considerations
+
+- name: Create monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: docker
+    mode: '0755'
+  loop:
+    - /opt/monitoring
+    - /opt/monitoring/prometheus
+    - /opt/monitoring/grafana
+    - /opt/monitoring/loki
+    - /opt/monitoring/alertmanager
+    - /opt/monitoring/data
+
+- name: Deploy Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: /opt/monitoring/prometheus/prometheus.yml
+    owner: nobody
+    group: docker
+    mode: '0644'
+  notify: restart prometheus
+
+- name: Deploy Prometheus rules
+  template:
+    src: prometheus-rules.yml.j2
+    dest: /opt/monitoring/prometheus/rules.yml
+    owner: nobody
+    group: docker
+    mode: '0644'
+  notify: reload prometheus
+
+- name: Deploy Grafana configuration
+  template:
+    src: grafana.ini.j2
+    dest: /opt/monitoring/grafana/grafana.ini
+    owner: grafana
+    group: docker
+    mode: '0640'
+  notify: restart grafana
+
+- name: Deploy Grafana dashboards
+  copy:
+    src: "dashboards/{{ item }}"
+    dest: "/opt/monitoring/grafana/dashboards/{{ item }}"
+    owner: grafana
+    group: docker
+    mode: '0644'
+  loop:
+    - summitethic-overview.json
+    - docker-monitoring.json
+    - security-audit.json
+    - ethical-metrics.json
+  notify: reload grafana
+
+- name: Deploy Loki configuration
+  template:
+    src: loki-config.yml.j2
+    dest: /opt/monitoring/loki/loki-config.yml
+    owner: loki
+    group: docker
+    mode: '0644'
+  notify: restart loki
+
+- name: Deploy Alertmanager configuration
+  template:
+    src: alertmanager.yml.j2
+    dest: /opt/monitoring/alertmanager/alertmanager.yml
+    owner: alertmanager
+    group: docker
+    mode: '0640'
+  notify: restart alertmanager
+
+- name: Deploy monitoring stack with Docker Compose
+  template:
+    src: docker-compose.monitoring.yml.j2
+    dest: /opt/monitoring/docker-compose.yml
+    owner: root
+    group: docker
+    mode: '0640'
+
+- name: Start monitoring stack
+  docker_compose:
+    project_src: /opt/monitoring
+    state: present
+    pull: yes
+    recreate: smart
+
+- name: Configure Traefik labels for monitoring services
+  docker_container:
+    name: "{{ item.name }}"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.{{ item.name }}.rule: "Host(`{{ item.subdomain }}.{{ domain_name }}`)"
+      traefik.http.routers.{{ item.name }}.entrypoints: "websecure"
+      traefik.http.routers.{{ item.name }}.tls: "true"
+      traefik.http.routers.{{ item.name }}.tls.certresolver: "letsencrypt"
+      traefik.http.routers.{{ item.name }}.middlewares: "admin-auth@file,security-headers@file"
+      traefik.http.services.{{ item.name }}.loadbalancer.server.port: "{{ item.port }}"
+  loop:
+    - { name: prometheus, subdomain: metrics, port: 9090 }
+    - { name: grafana, subdomain: dashboard, port: 3000 }
+    - { name: alertmanager, subdomain: alerts, port: 9093 }

@@ -1,0 +1,41 @@
+---
+# roles/security/templates/vault.hcl.j2
+# Vault configuration for SummitEthic secrets management
+
+ui = true
+disable_mlock = true
+
+storage "file" {
+  path = "/opt/vault/data"
+}
+
+listener "tcp" {
+  address       = "127.0.0.1:8200"
+  tls_disable   = "true"
+}
+
+api_addr = "http://127.0.0.1:8200"
+cluster_addr = "https://127.0.0.1:8201"
+
+telemetry {
+  prometheus_retention_time = "30s"
+  disable_hostname = true
+}
+
+log_level = "info"
+log_format = "json"
+log_file = "/var/log/vault/vault.log"
+log_rotate_duration = "24h"
+log_rotate_max_files = 7
+
+# Audit backend for compliance
+audit {
+  type = "file"
+  options = {
+    file_path = "/var/log/vault/audit.log"
+    log_raw = "false"
+    hmac_accessor = "true"
+    mode = "0640"
+    format = "json"
+  }
+}

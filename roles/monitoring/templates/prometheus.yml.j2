@@ -1,0 +1,95 @@
+---
+# roles/monitoring/templates/prometheus.yml.j2
+# Prometheus configuration with ethical monitoring principles
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'summitethic'
+    environment: '{{ environment }}'
+    # Ethical: Identify monitoring source for transparency
+    ethics: 'transparent-monitoring'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Load rules
+rule_files:
+  - "rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Monitor Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    # Ethical: Limit data retention
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'go_.*'
+        action: drop
+
+  # Monitor Node Exporter
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+):.*'
+        replacement: '${1}'
+
+  # Monitor Docker
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    # Ethical: Don't collect personal data
+    metric_relabel_configs:
+      - source_labels: [container_label_maintainer]
+        action: drop
+      - source_labels: [container_label_user]
+        action: drop
+
+  # Monitor Traefik
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8082']
+
+  # Monitor applications
+  - job_name: 'applications'
+    file_sd_configs:
+      - files:
+          - '/etc/prometheus/targets/*.json'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # Monitor PostgreSQL
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Monitor GitLab
+  - job_name: 'gitlab'
+    static_configs:
+      - targets: ['gitlab:9168']
+    metrics_path: '/-/metrics'
+    params:
+      token: ['{{ gitlab_monitoring_token }}']
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention:
+      time: 30d  # Ethical: Limited retention for privacy
+      size: 10GB
+    wal_compression: true

@@ -1,0 +1,413 @@
+---
+# .gitlab-ci.yml - SummitEthic CI/CD Pipeline
+# Ethical Principles:
+# 1. Transparency: All steps are clearly documented
+# 2. Security: No secrets in code, vulnerability scanning
+# 3. Accountability: Audit trails for all deployments
+# 4. Sustainability: Resource-efficient builds
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  # Ethical: Use BuildKit for efficient caching
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  # Security: Fail on high vulnerabilities
+  SEVERITY_THRESHOLD: "HIGH"
+  # Sustainability: Limit resource usage
+  DOCKER_MAX_CONCURRENT_DOWNLOADS: 3
+  DOCKER_MAX_CONCURRENT_UPLOADS: 3
+
+# Define stages
+stages:
+  - validate
+  - security
+  - build
+  - test
+  - quality
+  - deploy
+  - monitor
+  - rollback
+
+# Global before script for audit logging
+before_script:
+  - echo "[$(date -Iseconds)] Pipeline started by ${GITLAB_USER_NAME} for ${CI_COMMIT_REF_NAME}" >> audit.log
+  - |
+    # Ethical checkpoint: Verify commit is signed
+    if [[ "$CI_COMMIT_REF_PROTECTED" == "true" ]]; then
+      git verify-commit $CI_COMMIT_SHA || {
+        echo "ERROR: Commit must be signed for protected branches"
+        exit 1
+      }
+    fi
+
+# Reusable anchors for DRY principle
+.docker_template: &docker_template
+  image: docker:24-cli
+  services:
+    - docker:24-dind
+  before_script:
+    - docker info
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+
+.deploy_template: &deploy_template
+  image: alpine/ansible:latest
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+# Stage 1: Validate
+validate:code:
+  stage: validate
+  image: node:20-alpine
+  script:
+    - echo "Validating code structure and dependencies..."
+    # Check for known vulnerable dependencies
+    - npm audit --audit-level=$SEVERITY_THRESHOLD
+    # Validate Docker files
+    - docker run --rm -i hadolint/hadolint < Dockerfile
+    # Check for hardcoded secrets
+    - |
+      docker run --rm -v "$PWD:/src" \
+        trufflesecurity/trufflehog:latest \
+        filesystem /src --no-update --fail
+  only:
+    - branches
+    - merge_requests
+  artifacts:
+    reports:
+      junit: validation-report.xml
+    paths:
+      - audit.log
+    expire_in: 1 week
+
+# Stage 2: Security Scanning
+security:dependency_check:
+  stage: security
+  image: owasp/dependency-check:latest
+  script:
+    - |
+      /usr/share/dependency-check/bin/dependency-check.sh \
+        --project "SummitEthic-$CI_PROJECT_NAME" \
+        --scan . \
+        --format ALL \
+        --enableExperimental \
+        --failOnCVSS 7
+    - echo "[$(date -Iseconds)] Security scan completed" >> audit.log
+  artifacts:
+    reports:
+      junit: dependency-check-report.xml
+    paths:
+      - dependency-check-report.*
+      - audit.log
+    expire_in: 1 month
+  only:
+    - branches
+    - merge_requests
+
+security:container_scan:
+  <<: *docker_template
+  stage: security
+  script:
+    - docker build -t $CI_PROJECT_NAME:$CI_COMMIT_SHA .
+    # Scan for vulnerabilities using Trivy
+    - |
+      docker run --rm \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v $PWD:/workspace \
+        aquasec/trivy image \
+        --severity $SEVERITY_THRESHOLD \
+        --exit-code 1 \
+        --no-progress \
+        --format template \
+        --template "@/workspace/.trivyignore.tpl" \
+        $CI_PROJECT_NAME:$CI_COMMIT_SHA
+  artifacts:
+    reports:
+      container_scanning: container-scan-report.json
+    paths:
+      - audit.log
+    expire_in: 1 month
+  only:
+    - branches
+    - merge_requests
+
+# Stage 3: Build
+build:application:
+  <<: *docker_template
+  stage: build
+  script:
+    - echo "Building application with ethical considerations..."
+    # Multi-stage build for smaller, more secure images
+    - |
+      docker build \
+        --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+        --build-arg VCS_REF=$CI_COMMIT_SHA \
+        --build-arg VERSION=$CI_COMMIT_REF_NAME \
+        --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+        --label "org.opencontainers.image.authors=SummitEthic" \
+        --label "org.opencontainers.image.revision=$CI_COMMIT_SHA" \
+        --label "org.opencontainers.image.version=$CI_COMMIT_REF_NAME" \
+        --label "com.summitethic.ethical=true" \
+        --cache-from $CI_REGISTRY_IMAGE:latest \
+        --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA \
+        --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME \
+        .
+    # Sign the image for integrity
+    - |
+      if [[ "$CI_COMMIT_REF_PROTECTED" == "true" ]]; then
+        docker trust sign $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+      fi
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
+    - echo "[$(date -Iseconds)] Build completed and pushed to registry" >> audit.log
+  artifacts:
+    paths:
+      - audit.log
+    expire_in: 1 week
+  only:
+    - branches
+    - tags
+
+# Stage 4: Test
+test:unit:
+  stage: test
+  image: node:20-alpine
+  script:
+    - npm ci --only=production
+    - npm test -- --coverage --watchAll=false
+    # Ethical: Ensure test data is anonymized
+    - |
+      if grep -r "real.*email\|actual.*name\|production.*data" test/; then
+        echo "ERROR: Tests contain potential real user data"
+        exit 1
+      fi
+  coverage: '/Lines\s*:\s*(\d+\.\d+)%/'
+  artifacts:
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+    paths:
+      - coverage/
+      - audit.log
+    expire_in: 1 week
+  only:
+    - branches
+    - merge_requests
+
+test:integration:
+  <<: *docker_template
+  stage: test
+  script:
+    - docker-compose -f docker-compose.test.yml up -d
+    - docker-compose -f docker-compose.test.yml run tests
+    - docker-compose -f docker-compose.test.yml down -v
+  artifacts:
+    reports:
+      junit: test-results/integration-tests.xml
+    paths:
+      - test-results/
+      - audit.log
+    expire_in: 1 week
+  only:
+    - branches
+    - merge_requests
+
+# Stage 5: Code Quality
+quality:sonarqube:
+  stage: quality
+  image: sonarsource/sonar-scanner-cli:latest
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - |
+      sonar-scanner \
+        -Dsonar.projectKey=$CI_PROJECT_NAME \
+        -Dsonar.sources=. \
+        -Dsonar.host.url=$SONAR_HOST_URL \
+        -Dsonar.login=$SONAR_TOKEN \
+        -Dsonar.qualitygate.wait=true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+quality:license_check:
+  stage: quality
+  image: licensefinder/license_finder:latest
+  script:
+    # Ethical: Ensure all dependencies have compatible licenses
+    - license_finder approval add MIT Apache-2.0 BSD ISC
+    - license_finder --decisions-file=.license_finder.yml
+    - echo "[$(date -Iseconds)] License compliance check passed" >> audit.log
+  artifacts:
+    paths:
+      - license_report.html
+      - audit.log
+    expire_in: 1 month
+  only:
+    - branches
+    - merge_requests
+
+# Stage 6: Deploy
+deploy:staging:
+  <<: *deploy_template
+  stage: deploy
+  environment:
+    name: staging
+    url: https://staging.$DOMAIN_NAME
+    on_stop: stop:staging
+  script:
+    - |
+      ansible-playbook -i inventories/staging/hosts.yml \
+        playbooks/deploy-apps.yml \
+        -e "image_tag=$CI_COMMIT_SHA" \
+        -e "environment=staging" \
+        -e "deploy_user=$GITLAB_USER_NAME" \
+        -e "deploy_reason='$CI_COMMIT_MESSAGE'" \
+        --vault-password-file=$ANSIBLE_VAULT_PASSWORD_FILE
+    # Create deployment record for audit
+    - |
+      cat > deployment-record.json <<EOF
+      {
+        "timestamp": "$(date -Iseconds)",
+        "environment": "staging",
+        "version": "$CI_COMMIT_SHA",
+        "deployed_by": "$GITLAB_USER_NAME",
+        "commit_message": "$CI_COMMIT_MESSAGE",
+        "pipeline_url": "$CI_PIPELINE_URL"
+      }
+      EOF
+    - curl -X POST -H "Content-Type: application/json" -d @deployment-record.json $AUDIT_API_URL
+  only:
+    - develop
+  when: on_success
+
+deploy:production:
+  <<: *deploy_template
+  stage: deploy
+  environment:
+    name: production
+    url: https://$DOMAIN_NAME
+    on_stop: stop:production
+  script:
+    # Ethical: Require manual approval for production
+    - echo "Production deployment requires manual approval"
+    # Blue-green deployment for zero downtime
+    - |
+      ansible-playbook -i inventories/production/hosts.yml \
+        playbooks/deploy-blue-green.yml \
+        -e "image_tag=$CI_COMMIT_SHA" \
+        -e "environment=production" \
+        -e "deploy_user=$GITLAB_USER_NAME" \
+        -e "deploy_reason='$CI_COMMIT_MESSAGE'" \
+        --vault-password-file=$ANSIBLE_VAULT_PASSWORD_FILE
+    # Send notification to stakeholders
+    - |
+      curl -X POST $SLACK_WEBHOOK_URL \
+        -H 'Content-type: application/json' \
+        --data '{
+          "text": "Production deployment completed",
+          "attachments": [{
+            "color": "good",
+            "fields": [
+              {"title": "Version", "value": "'$CI_COMMIT_SHA'", "short": true},
+              {"title": "Deployed by", "value": "'$GITLAB_USER_NAME'", "short": true},
+              {"title": "Environment", "value": "Production", "short": true},
+              {"title": "Time", "value": "'$(date -Iseconds)'", "short": true}
+            ]
+          }]
+        }'
+  only:
+    - main
+    - tags
+  when: manual
+  allow_failure: false
+
+# Stage 7: Monitor
+monitor:health_check:
+  stage: monitor
+  image: alpine:latest
+  script:
+    - apk add --no-cache curl jq
+    # Check application health
+    - |
+      HEALTH_STATUS=$(curl -s https://$DOMAIN_NAME/health | jq -r '.status')
+      if [[ "$HEALTH_STATUS" != "healthy" ]]; then
+        echo "ERROR: Application health check failed"
+        exit 1
+      fi
+    # Check performance metrics
+    - |
+      RESPONSE_TIME=$(curl -o /dev/null -s -w '%{time_total}\n' https://$DOMAIN_NAME)
+      if (( $(echo "$RESPONSE_TIME > 2.0" | bc -l) )); then
+        echo "WARNING: Response time exceeds threshold: ${RESPONSE_TIME}s"
+      fi
+    - echo "[$(date -Iseconds)] Health check completed successfully" >> audit.log
+  artifacts:
+    paths:
+      - audit.log
+    expire_in: 1 week
+  only:
+    - main
+    - tags
+  when: on_success
+
+# Stage 8: Rollback (if needed)
+rollback:production:
+  <<: *deploy_template
+  stage: rollback
+  environment:
+    name: production
+    action: rollback
+  script:
+    - echo "Initiating rollback to previous version..."
+    - |
+      ansible-playbook -i inventories/production/hosts.yml \
+        playbooks/rollback.yml \
+        -e "environment=production" \
+        -e "rollback_user=$GITLAB_USER_NAME" \
+        -e "rollback_reason='$ROLLBACK_REASON'" \
+        --vault-password-file=$ANSIBLE_VAULT_PASSWORD_FILE
+    # Log rollback event
+    - |
+      curl -X POST $AUDIT_API_URL \
+        -H "Content-Type: application/json" \
+        -d '{
+          "event": "rollback",
+          "environment": "production",
+          "user": "'$GITLAB_USER_NAME'",
+          "reason": "'$ROLLBACK_REASON'",
+          "timestamp": "'$(date -Iseconds)'"
+        }'
+  only:
+    - main
+  when: manual
+  allow_failure: false
+
+# Cleanup old images to save space
+cleanup:registry:
+  stage: .post
+  image: alpine:latest
+  script:
+    - apk add --no-cache curl jq
+    # Ethical: Keep audit trail but clean up old images
+    - |
+      curl -X DELETE \
+        -H "Authorization: Bearer $CI_REGISTRY_TOKEN" \
+        "$CI_REGISTRY_API/projects/$CI_PROJECT_ID/registry/repositories/tags?keep_n=10&older_than=30d"
+    - echo "[$(date -Iseconds)] Registry cleanup completed" >> audit.log
+  only:
+    - schedules
+  variables:
+    GIT_STRATEGY: none

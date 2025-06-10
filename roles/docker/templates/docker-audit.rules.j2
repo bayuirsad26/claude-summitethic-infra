@@ -1,0 +1,21 @@
+---
+# roles/docker/templates/docker-audit.rules.j2
+# Docker Audit Rules for SummitEthic
+# Monitor Docker daemon
+-w /usr/bin/dockerd -k docker
+-w /usr/bin/docker -k docker
+-w /usr/bin/docker-containerd -k docker
+-w /usr/bin/docker-runc -k docker
+
+# Monitor Docker files and directories
+-w /var/lib/docker -k docker
+-w /etc/docker -k docker
+-w /etc/docker/daemon.json -k docker
+-w /etc/systemd/system/docker.service -k docker
+-w /etc/systemd/system/docker.service.d -k docker
+-w /var/run/docker.sock -k docker
+
+# Monitor Docker-related system calls
+-a always,exit -F arch=b64 -S clone -F a0&0x7C020000 -k docker_container
+-a always,exit -F arch=b64 -S unshare -k docker_container
+-a always,exit -F arch=b64 -S setns -k docker_container

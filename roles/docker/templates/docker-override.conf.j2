@@ -1,0 +1,49 @@
+---
+# roles/docker/templates/docker-override.conf.j2
+[Service]
+# Security hardening overrides
+ExecStart=
+ExecStart=/usr/bin/dockerd
+
+# Restrict access to /proc
+ProtectProc=invisible
+
+# Prevent access to home directories
+ProtectHome=yes
+
+# Make /usr, /boot, /etc read-only
+ProtectSystem=strict
+
+# Restrict access to kernel tunables
+ProtectKernelTunables=yes
+
+# Restrict access to kernel modules
+ProtectKernelModules=yes
+
+# Restrict access to kernel logs
+ProtectKernelLogs=yes
+
+# Restrict access to control groups
+ProtectControlGroups=yes
+
+# Restrict system calls
+SystemCallFilter=@system-service
+SystemCallFilter=~@obsolete @privileged
+
+# Prevent changing system clock
+ProtectClock=yes
+
+# Restrict namespaces
+RestrictNamespaces=yes
+
+# Prevent real-time scheduling
+RestrictRealtime=yes
+
+# Lock down personality
+LockPersonality=yes
+
+# Prevent memory writes and execution
+MemoryDenyWriteExecute=yes
+
+# Remove all capabilities except necessary ones
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_SYS_ADMIN CAP_DAC_OVERRIDE

@@ -1,0 +1,13 @@
+---
+# roles/traefik/handlers/main.yml
+- name: restart traefik
+  docker_compose:
+    project_src: /opt/traefik
+    restarted: yes
+    services:
+      - traefik
+
+- name: reload traefik
+  docker_container:
+    name: traefik
+    restart: yes

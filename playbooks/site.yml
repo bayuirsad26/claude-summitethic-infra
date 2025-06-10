@@ -1,0 +1,219 @@
+---
+# site.yml - Main orchestration playbook for SummitEthic Infrastructure
+# Ethical Principle: Transparency through Infrastructure as Code
+# All changes are auditable and version controlled
+
+- name: SummitEthic Infrastructure Setup - Phase 1: Initial Security Hardening
+  hosts: all
+  become: yes
+  gather_facts: yes
+  tags: 
+    - initial
+    - security
+  
+  pre_tasks:
+    - name: Ethical checkpoint - Log all infrastructure changes
+      lineinfile:
+        path: /var/log/summitethic-audit.log
+        line: "{{ ansible_date_time.iso8601 }} - Infrastructure change initiated by {{ ansible_user_id }}"
+        create: yes
+        mode: '0640'
+        owner: root
+        group: adm
+      
+    - name: Update system packages (security patches)
+      apt:
+        update_cache: yes
+        upgrade: safe
+        autoremove: yes
+      when: ansible_os_family == "Debian"
+      
+  roles:
+    - common
+    - security
+
+- name: Phase 2: Docker Engine Setup with Security Best Practices
+  hosts: webservers
+  become: yes
+  tags:
+    - docker
+    - containers
+  
+  tasks:
+    - name: Include Docker role with security hardening
+      include_role:
+        name: docker
+      vars:
+        docker_security_options:
+          - no-new-privileges
+          - apparmor=docker-default
+        docker_log_driver: "json-file"
+        docker_log_options:
+          max-size: "10m"
+          max-file: "3"
+          
+    - name: Create Docker networks for service isolation
+      docker_network:
+        name: "{{ item }}"
+        driver: bridge
+        internal: "{{ item == 'backend' }}"
+      loop:
+        - frontend
+        - backend
+        - monitoring
+      tags: networks
+
+- name: Phase 3: Traefik Setup with Automatic SSL
+  hosts: webservers
+  become: yes
+  tags:
+    - traefik
+    - ssl
+  
+  tasks:
+    - name: Deploy Traefik with ethical rate limiting
+      include_role:
+        name: traefik
+      vars:
+        traefik_version: "3.0"
+        traefik_acme_email: "{{ vault_traefik_acme_email }}"
+        traefik_dashboard_enabled: true
+        traefik_dashboard_users: "{{ vault_traefik_dashboard_users }}"
+        # Ethical consideration: Implement rate limiting to prevent abuse
+        traefik_rate_limit:
+          average: 100
+          burst: 200
+
+- name: Phase 4: Core Services Deployment
+  hosts: webservers
+  become: yes
+  tags:
+    - services
+    - apps
+  
+  tasks:
+    - name: Deploy GitLab CE for ethical source control
+      include_role:
+        name: gitlab
+      vars:
+        gitlab_external_url: "https://git.{{ domain_name }}"
+        gitlab_email_enabled: true
+        gitlab_email_from: "gitlab@{{ domain_name }}"
+        # Ethical: Enable audit logging
+        gitlab_audit_events_enabled: true
+        gitlab_compliance_framework_enabled: true
+      tags: gitlab
+      
+    - name: Deploy Mailcow for self-hosted email
+      include_role:
+        name: mailcow
+      vars:
+        mailcow_hostname: "mail.{{ domain_name }}"
+        mailcow_admin_email: "{{ vault_admin_email }}"
+        # Ethical: Enable DMARC for email authentication
+        mailcow_dmarc_enabled: true
+        mailcow_dmarc_policy: "quarantine"
+      tags: mailcow
+      
+    - name: Deploy Mautic for ethical marketing automation
+      include_role:
+        name: mautic
+      vars:
+        mautic_site_url: "https://marketing.{{ domain_name }}"
+        # Ethical: Respect user privacy
+        mautic_do_not_track_enabled: true
+        mautic_anonymize_ip: true
+      tags: mautic
+
+- name: Phase 5: Monitoring and Observability Stack
+  hosts: webservers
+  become: yes
+  tags:
+    - monitoring
+    - observability
+  
+  tasks:
+    - name: Deploy monitoring stack for transparency
+      include_role:
+        name: monitoring
+      vars:
+        monitoring_stack:
+          - prometheus
+          - grafana
+          - loki
+          - alertmanager
+        # Ethical: Monitor but respect privacy
+        prometheus_retention_time: "30d"
+        grafana_anonymous_enabled: false
+        grafana_auth_ldap_enabled: true
+
+- name: Phase 6: Backup and Disaster Recovery
+  hosts: webservers
+  become: yes
+  tags:
+    - backup
+    - disaster-recovery
+  
+  tasks:
+    - name: Setup automated backups
+      include_tasks: tasks/backup-setup.yml
+      vars:
+        backup_retention_days: 30
+        backup_encryption_enabled: true
+        backup_destinations:
+          - local: /backup
+          - remote: "{{ vault_backup_remote_location }}"
+          
+    - name: Create disaster recovery documentation
+      template:
+        src: templates/disaster-recovery-plan.md.j2
+        dest: /opt/summitethic/docs/disaster-recovery-plan.md
+        mode: '0640'
+        owner: root
+        group: summitethic
+
+- name: Phase 7: Final Security Audit and Compliance Check
+  hosts: all
+  become: yes
+  tags:
+    - audit
+    - compliance
+  
+  tasks:
+    - name: Run security audit
+      include_tasks: tasks/security-audit.yml
+      
+    - name: Generate compliance report
+      template:
+        src: templates/compliance-report.md.j2
+        dest: /opt/summitethic/reports/compliance-{{ ansible_date_time.date }}.md
+        mode: '0640'
+        
+    - name: Notify team of deployment completion
+      mail:
+        to: "{{ vault_team_email }}"
+        subject: "SummitEthic Infrastructure Deployment Complete"
+        body: |
+          Infrastructure deployment completed successfully.
+          
+          Ethical considerations implemented:
+          - All services containerized for isolation
+          - SSL/TLS enabled on all endpoints
+          - Audit logging enabled across all services
+          - Rate limiting implemented
+          - Backup and disaster recovery in place
+          - Compliance report generated
+          
+          Please review the deployment at https://{{ domain_name }}
+        
+  handlers:
+    - name: restart docker
+      systemd:
+        name: docker
+        state: restarted
+        daemon_reload: yes
+        
+    - name: reload traefik
+      docker_container:
+        name: traefik
+        restart: yes
