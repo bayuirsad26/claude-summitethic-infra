@@ -54,7 +54,7 @@
       "
 
 - name: Start Mautic containers
-  docker_compose:
+  community.docker.docker_compose_v2:
     project_src: /opt/summitethic/apps/mautic
     state: present
     pull: true

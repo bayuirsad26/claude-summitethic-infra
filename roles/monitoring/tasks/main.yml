@@ -85,7 +85,7 @@
     mode: "0640"
 
 - name: Start monitoring stack
-  docker_compose:
+  community.docker.docker_compose_v2:
     project_src: /opt/monitoring
     state: present
     pull: true

@@ -103,7 +103,7 @@
             mode: "0640"
 
         - name: Start WordPress
-          docker_compose:
+          community.docker.docker_compose_v2:
             project_src: /opt/summitethic/apps/wordpress
             state: present
             pull: true
@@ -137,7 +137,7 @@
             mode: "0640"
 
         - name: Start Matomo
-          docker_compose:
+          community.docker.docker_compose_v2:
             project_src: /opt/summitethic/apps/matomo
             state: present
             pull: true
@@ -270,7 +270,7 @@
         state: reloaded
 
     - name: restart services
-      docker_compose:
+      community.docker.docker_compose_v2:
         project_src: "/opt/summitethic/apps/{{ item }}"
         restarted: true
       loop: "{{ services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list }}"
