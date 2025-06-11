@@ -4,8 +4,8 @@
 ---
 - name: Phase 1 | Initial Security Hardening
   hosts: all
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
   tags:
     - initial
     - security
@@ -15,16 +15,16 @@
       ansible.builtin.lineinfile:
         path: /var/log/summitethic-audit.log
         line: "{{ ansible_date_time.iso8601 }} - Infrastructure change initiated by {{ ansible_user_id }}"
-        create: yes
-        mode: '0640'
+        create: true
+        mode: "0640"
         owner: root
         group: adm
 
     - name: Update system packages (security patches)
       ansible.builtin.apt:
-        update_cache: yes
+        update_cache: true
         upgrade: safe
-        autoremove: yes
+        autoremove: true
       when: ansible_os_family == "Debian"
 
   roles:
@@ -33,7 +33,7 @@
 
 - name: Phase 2 | Docker Engine Setup with Security Best Practices
   hosts: webservers
-  become: yes
+  become: true
   tags:
     - docker
     - containers
@@ -64,7 +64,7 @@
 
 - name: Phase 3 | Traefik Setup with Automatic SSL
   hosts: webservers
-  become: yes
+  become: true
   tags:
     - traefik
     - ssl
@@ -84,7 +84,7 @@
 
 - name: Phase 4 | Core Services Deployment
   hosts: webservers
-  become: yes
+  become: true
   tags:
     - services
     - apps
@@ -127,7 +127,7 @@
 
 - name: Phase 5 | Monitoring and Observability Stack
   hosts: webservers
-  become: yes
+  become: true
   tags:
     - monitoring
     - observability
@@ -148,7 +148,7 @@
 
 - name: Phase 6 | Backup and Disaster Recovery
   hosts: webservers
-  become: yes
+  become: true
   tags:
     - backup
     - disaster-recovery
@@ -166,13 +166,13 @@
       ansible.builtin.template:
         src: templates/disaster-recovery-plan.md.j2
         dest: /opt/summitethic/docs/disaster-recovery-plan.md
-        mode: '0640'
+        mode: "0640"
         owner: root
         group: summitethic
 
 - name: Phase 7 | Final Security Audit and Compliance Check
   hosts: all
-  become: yes
+  become: true
   tags:
     - audit
     - compliance
@@ -184,7 +184,7 @@
       ansible.builtin.template:
         src: templates/compliance-report.md.j2
         dest: "/opt/summitethic/reports/compliance-{{ ansible_date_time.date }}.md"
-        mode: '0640'
+        mode: "0640"
 
     - name: Notify team of deployment completion
       community.general.mail:
@@ -209,11 +209,11 @@
       ansible.builtin.systemd:
         name: docker
         state: restarted
-        daemon_reload: yes
+        daemon_reload: true
 
     - name: reload traefik
       listen: "reload traefik"
       community.docker.docker_container:
         name: traefik
         state: started
-        restart: yes
+        restart: true

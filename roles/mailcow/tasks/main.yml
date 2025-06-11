@@ -1,3 +1,4 @@
+---
 # roles/mailcow/tasks/main.yml
 # Mailcow installation for ethical email management
 
@@ -43,7 +44,7 @@
     - { key: "HTTPS_PORT", value: "8443" }
     - { key: "HTTP_BIND", value: "127.0.0.1" }
     - { key: "HTTPS_BIND", value: "127.0.0.1" }
-    - { key: "SKIP_LETS_ENCRYPT", value: "y" }  # We use Traefik for SSL
+    - { key: "SKIP_LETS_ENCRYPT", value: "y" } # We use Traefik for SSL
     - { key: "SKIP_SOGO", value: "n" }
     - { key: "SKIP_SOLR", value: "n" }
     - { key: "SKIP_CLAMD", value: "n" }
@@ -51,9 +52,8 @@
     - { key: "TZ", value: "{{ system_timezone }}" }
     - { key: "COMPOSE_PROJECT_NAME", value: "mailcow" }
     - { key: "WATCHDOG_NOTIFY_EMAIL", value: "{{ vault_mailcow_admin_email }}" }
-    # Ethical settings
-    - { key: "MAILDIR_GC_TIME", value: "30" }  # Privacy: Auto-delete old mail
-    - { key: "LOG_LINES", value: "1000" }  # Privacy: Limit log retention
+    - { key: "MAILDIR_GC_TIME", value: "30" } # Privacy: Auto-delete old mail
+    - { key: "LOG_LINES", value: "1000" } # Privacy: Limit log retention
 
 - name: Create custom docker-compose override
   ansible.builtin.template:
@@ -61,7 +61,7 @@
     dest: /opt/summitethic/apps/mailcow/docker-compose.override.yml
     owner: root
     group: root
-    mode: '0640'
+    mode: "0640"
 
 - name: Configure Mailcow for Traefik
   ansible.builtin.blockinfile:
@@ -140,7 +140,7 @@
     dest: /opt/summitethic/scripts/mailcow-backup.sh
     owner: root
     group: root
-    mode: '0750'
+    mode: "0750"
 
 - name: Set up Mailcow backup cron job
   ansible.builtin.cron:
@@ -159,9 +159,9 @@
       X-API-Key: "{{ vault_mailcow_api_key }}"
     body_format: json
     body:
-      force_pw_update: 90  # Force password change every 90 days
-      tls_enforce_in: 1    # Enforce TLS for incoming mail
-      tls_enforce_out: 1   # Enforce TLS for outgoing mail
+      force_pw_update: 90 # Force password change every 90 days
+      tls_enforce_in: 1 # Enforce TLS for incoming mail
+      tls_enforce_out: 1 # Enforce TLS for outgoing mail
 
 - name: Log Mailcow deployment
   ansible.builtin.lineinfile:

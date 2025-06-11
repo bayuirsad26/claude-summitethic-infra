@@ -1,3 +1,4 @@
+---
 # roles/security/tasks/main.yml
 # Security hardening for SummitEthic infrastructure
 
@@ -32,9 +33,9 @@
     dest: /etc/ssh/sshd_config
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
     backup: true
-    validate: '/usr/sbin/sshd -t -f %s'
+    validate: "/usr/sbin/sshd -t -f %s"
   notify: restart sshd
 
 - name: Set SSH key permissions
@@ -42,7 +43,7 @@
     path: "{{ item }}"
     owner: root
     group: root
-    mode: '0600'
+    mode: "0600"
   loop:
     - /etc/ssh/ssh_host_rsa_key
     - /etc/ssh/ssh_host_ecdsa_key
@@ -54,8 +55,8 @@
     direction: "{{ item.direction }}"
     policy: "{{ item.policy }}"
   loop:
-    - { direction: 'incoming', policy: 'deny' }
-    - { direction: 'outgoing', policy: 'allow' }
+    - { direction: "incoming", policy: "deny" }
+    - { direction: "outgoing", policy: "allow" }
   notify: restart ufw
 
 - name: Configure UFW rules
@@ -66,16 +67,16 @@
     src: "{{ item.src | default('any') }}"
     comment: "{{ item.comment }}"
   loop:
-    - { rule: 'allow', port: '22', proto: 'tcp', src: "{{ admin_ip_range }}", comment: 'SSH from admin network' }
-    - { rule: 'allow', port: '80', proto: 'tcp', comment: 'HTTP' }
-    - { rule: 'allow', port: '443', proto: 'tcp', comment: 'HTTPS' }
-    - { rule: 'allow', port: '9100', proto: 'tcp', src: "{{ monitoring_ip }}", comment: 'Node Exporter' }
+    - { rule: "allow", port: "22", proto: "tcp", src: "{{ admin_ip_range }}", comment: "SSH from admin network" }
+    - { rule: "allow", port: "80", proto: "tcp", comment: "HTTP" }
+    - { rule: "allow", port: "443", proto: "tcp", comment: "HTTPS" }
+    - { rule: "allow", port: "9100", proto: "tcp", src: "{{ monitoring_ip }}", comment: "Node Exporter" }
   notify: restart ufw
 
 - name: Enable UFW
   community.general.ufw:
     state: enabled
-    logging: 'on'
+    logging: "on"
 
 # Fail2ban Configuration
 - name: Configure fail2ban
@@ -84,10 +85,10 @@
     dest: "{{ item.dest }}"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   loop:
-    - { src: 'fail2ban-jail.local.j2', dest: '/etc/fail2ban/jail.local' }
-    - { src: 'fail2ban-docker.conf.j2', dest: '/etc/fail2ban/filter.d/docker.conf' }
+    - { src: "fail2ban-jail.local.j2", dest: "/etc/fail2ban/jail.local" }
+    - { src: "fail2ban-docker.conf.j2", dest: "/etc/fail2ban/filter.d/docker.conf" }
   notify: restart fail2ban
 
 # System Hardening
@@ -97,7 +98,7 @@
     dest: /etc/security/limits.d/99-summitethic.conf
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
 
 - name: Configure sysctl for security
   ansible.posix.sysctl:
@@ -107,31 +108,31 @@
     reload: true
   loop:
     # Network security
-    - { name: 'net.ipv4.tcp_syncookies', value: '1' }
-    - { name: 'net.ipv4.ip_forward', value: '1' }  # For Docker
-    - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
-    - { name: 'net.ipv4.conf.default.rp_filter', value: '1' }
-    - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
-    - { name: 'net.ipv4.conf.default.accept_source_route', value: '0' }
-    - { name: 'net.ipv4.conf.all.send_redirects', value: '0' }
-    - { name: 'net.ipv4.conf.default.send_redirects', value: '0' }
-    - { name: 'net.ipv4.conf.all.accept_redirects', value: '0' }
-    - { name: 'net.ipv4.conf.default.accept_redirects', value: '0' }
-    - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
-    - { name: 'net.ipv4.icmp_ignore_bogus_error_responses', value: '1' }
-    - { name: 'net.ipv4.conf.all.log_martians', value: '1' }
-    - { name: 'net.ipv4.conf.default.log_martians', value: '1' }
+    - { name: "net.ipv4.tcp_syncookies", value: "1" }
+    - { name: "net.ipv4.ip_forward", value: "1" } # For Docker
+    - { name: "net.ipv4.conf.all.rp_filter", value: "1" }
+    - { name: "net.ipv4.conf.default.rp_filter", value: "1" }
+    - { name: "net.ipv4.conf.all.accept_source_route", value: "0" }
+    - { name: "net.ipv4.conf.default.accept_source_route", value: "0" }
+    - { name: "net.ipv4.conf.all.send_redirects", value: "0" }
+    - { name: "net.ipv4.conf.default.send_redirects", value: "0" }
+    - { name: "net.ipv4.conf.all.accept_redirects", value: "0" }
+    - { name: "net.ipv4.conf.default.accept_redirects", value: "0" }
+    - { name: "net.ipv4.icmp_echo_ignore_broadcasts", value: "1" }
+    - { name: "net.ipv4.icmp_ignore_bogus_error_responses", value: "1" }
+    - { name: "net.ipv4.conf.all.log_martians", value: "1" }
+    - { name: "net.ipv4.conf.default.log_martians", value: "1" }
     # Kernel security
-    - { name: 'kernel.randomize_va_space', value: '2' }
-    - { name: 'kernel.panic', value: '60' }
-    - { name: 'kernel.panic_on_oops', value: '60' }
-    - { name: 'kernel.yama.ptrace_scope', value: '1' }
-    - { name: 'kernel.dmesg_restrict', value: '1' }
-    - { name: 'kernel.kptr_restrict', value: '2' }
+    - { name: "kernel.randomize_va_space", value: "2" }
+    - { name: "kernel.panic", value: "60" }
+    - { name: "kernel.panic_on_oops", value: "60" }
+    - { name: "kernel.yama.ptrace_scope", value: "1" }
+    - { name: "kernel.dmesg_restrict", value: "1" }
+    - { name: "kernel.kptr_restrict", value: "2" }
     # File system security
-    - { name: 'fs.suid_dumpable', value: '0' }
-    - { name: 'fs.protected_hardlinks', value: '1' }
-    - { name: 'fs.protected_symlinks', value: '1' }
+    - { name: "fs.suid_dumpable", value: "0" }
+    - { name: "fs.protected_hardlinks", value: "1" }
+    - { name: "fs.protected_symlinks", value: "1" }
 
 # Audit Configuration
 - name: Configure auditd rules
@@ -140,7 +141,7 @@
     dest: /etc/audit/rules.d/summitethic.rules
     owner: root
     group: root
-    mode: '0640'
+    mode: "0640"
   notify: Restart Auditd
 
 # AppArmor Profiles
@@ -150,7 +151,7 @@
     dest: "/etc/apparmor.d/{{ item }}"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   loop:
     - usr.bin.docker
     - docker-containers
@@ -180,7 +181,7 @@
         dest: /etc/vault.d/vault.hcl
         owner: vault
         group: vault
-        mode: '0640'
+        mode: "0640"
       notify: restart vault
 
     - name: Initialize Vault (if not already initialized)
@@ -199,7 +200,7 @@
     dest: /etc/logrotate.d/security
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
 
 # Create security user
 - name: Create security audit user
@@ -217,5 +218,5 @@
       # Security audit user - read-only access to logs
       secaudit ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /usr/bin/aureport, /usr/bin/ausearch
     dest: /etc/sudoers.d/secaudit
-    mode: '0440'
-    validate: 'visudo -cf %s'
+    mode: "0440"
+    validate: "visudo -cf %s"

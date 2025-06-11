@@ -4,12 +4,12 @@
 
 - name: Deploy SummitEthic Applications
   hosts: webservers
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
   vars:
     deployment_timestamp: "{{ ansible_date_time.iso8601 }}"
     deployment_id: "{{ ansible_date_time.epoch }}"
-    
+
   pre_tasks:
     - name: Verify prerequisites
       assert:
@@ -18,27 +18,27 @@
           - traefik_running | default(false)
           - postgres_running | default(false)
         fail_msg: "Prerequisites not met. Ensure Docker, Traefik, and PostgreSQL are running."
-        
+
     - name: Check Docker daemon status
       systemd:
         name: docker
         state: started
       register: docker_status
-      
+
     - name: Set Docker daemon fact
       set_fact:
         docker_daemon_running: "{{ docker_status.status.ActiveState == 'active' }}"
-        
+
     - name: Check Traefik status
       docker_container_info:
         name: traefik
       register: traefik_info
       failed_when: false
-      
+
     - name: Set Traefik fact
       set_fact:
         traefik_running: "{{ traefik_info.exists | default(false) and traefik_info.container.State.Running | default(false) }}"
-        
+
     - name: Create deployment record
       lineinfile:
         path: /var/log/summitethic/deployments.log
@@ -49,9 +49,9 @@
           Deployed by: {{ deploy_user | default(ansible_user_id) }}
           Reason: {{ deploy_reason | default('Scheduled deployment') }}
           Services: {{ services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list | join(', ') }}
-        create: yes
-        mode: '0640'
-        
+        create: true
+        mode: "0640"
+
   tasks:
     # Phase 1: Deploy GitLab
     - name: Deploy GitLab for source control
@@ -61,7 +61,7 @@
       tags:
         - gitlab
         - vcs
-        
+
     # Phase 2: Deploy Mailcow
     - name: Deploy Mailcow for email services
       include_role:
@@ -70,7 +70,7 @@
       tags:
         - mailcow
         - email
-        
+
     # Phase 3: Deploy Mautic
     - name: Deploy Mautic for marketing automation
       include_role:
@@ -79,7 +79,7 @@
       tags:
         - mautic
         - marketing
-        
+
     # Phase 4: Deploy WordPress
     - name: Deploy WordPress for company website
       block:
@@ -89,30 +89,30 @@
             state: directory
             owner: www-data
             group: docker
-            mode: '0755'
+            mode: "0755"
           loop:
             - /opt/summitethic/apps/wordpress
             - /opt/summitethic/apps/wordpress/wp-content
-            
+
         - name: Deploy WordPress docker-compose
           template:
             src: ../templates/docker-compose.wordpress.yml.j2
             dest: /opt/summitethic/apps/wordpress/docker-compose.yml
             owner: root
             group: docker
-            mode: '0640'
-            
+            mode: "0640"
+
         - name: Start WordPress
           docker_compose:
             project_src: /opt/summitethic/apps/wordpress
             state: present
-            pull: yes
-            
+            pull: true
+
       when: "'wordpress' in services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list"
       tags:
         - wordpress
         - website
-        
+
     # Phase 5: Deploy Matomo
     - name: Deploy Matomo for analytics
       block:
@@ -122,31 +122,31 @@
             state: directory
             owner: www-data
             group: docker
-            mode: '0755'
+            mode: "0755"
           loop:
             - /opt/summitethic/apps/matomo
             - /opt/summitethic/apps/matomo/config
             - /opt/summitethic/apps/matomo/logs
-            
+
         - name: Deploy Matomo docker-compose
           template:
             src: ../templates/docker-compose.matomo.yml.j2
             dest: /opt/summitethic/apps/matomo/docker-compose.yml
             owner: root
             group: docker
-            mode: '0640'
-            
+            mode: "0640"
+
         - name: Start Matomo
           docker_compose:
             project_src: /opt/summitethic/apps/matomo
             state: present
-            pull: yes
-            
+            pull: true
+
       when: "'matomo' in services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list"
       tags:
         - matomo
         - analytics
-        
+
     # Phase 6: Configure services for Traefik
     - name: Configure all services for Traefik routing
       include_tasks: tasks/configure-traefik-labels.yml
@@ -156,24 +156,24 @@
       tags:
         - traefik
         - routing
-        
+
     # Phase 7: Health checks
     - name: Perform health checks on deployed services
       uri:
         url: "https://{{ item.subdomain }}.{{ domain_name }}/health"
-        status_code: 
+        status_code:
           - 200
           - 301
           - 302
         timeout: 30
-        validate_certs: yes
+        validate_certs: true
       loop: "{{ services | selectattr('enabled', 'equalto', true) | list }}"
       when: item.subdomain is defined
       register: health_checks
-      ignore_errors: yes
+      ignore_errors: true
       tags:
         - healthcheck
-        
+
     # Phase 8: Configure backups
     - name: Configure automated backups for all services
       template:
@@ -181,10 +181,10 @@
         dest: /etc/cron.d/summitethic-backups
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
       tags:
         - backup
-        
+
     # Phase 9: Security scan
     - name: Run security scan on deployed services
       shell: |
@@ -196,22 +196,22 @@
           --output /tmp/security-scan-{{ deployment_id }}.json \
           $(docker ps --format "{{.Image}}" | grep -E "gitlab|mailcow|mautic|wordpress|matomo")
       register: security_scan
-      ignore_errors: yes
+      ignore_errors: true
       tags:
         - security
         - scan
-        
+
   post_tasks:
     - name: Generate deployment report
       template:
         src: ../templates/deployment-report.md.j2
         dest: "/opt/summitethic/reports/deployment-{{ deployment_id }}.md"
-        mode: '0640'
+        mode: "0640"
       vars:
         deployment_status: "{{ 'SUCCESS' if health_checks.failed == 0 else 'PARTIAL' }}"
         deployed_services: "{{ services | selectattr('enabled', 'equalto', true) | list }}"
         health_check_results: "{{ health_checks.results | default([]) }}"
-        
+
     - name: Log deployment completion
       lineinfile:
         path: /var/log/summitethic/deployments.log
@@ -221,27 +221,27 @@
           Timestamp: {{ ansible_date_time.iso8601 }}
           Status: {{ 'SUCCESS' if health_checks.failed == 0 else 'COMPLETED WITH WARNINGS' }}
           Duration: {{ (ansible_date_time.epoch | int) - (deployment_id | int) }} seconds
-          
+
     - name: Send deployment notification
       mail:
         to: "{{ notification_channels | selectattr('type', 'equalto', 'email') | map(attribute='smtp_user') | first | default('admin@summitethic.com') }}"
         subject: "[SummitEthic] Deployment {{ deployment_status }} - {{ deployment_id }}"
         body: |
           Deployment completed on {{ ansible_date_time.iso8601 }}
-          
+
           Status: {{ deployment_status }}
           Services deployed: {{ deployed_services | map(attribute='name') | join(', ') }}
-          
+
           Access URLs:
           {% for service in deployed_services %}
           {% if service.subdomain is defined %}
           - {{ service.name | title }}: https://{{ service.subdomain }}.{{ domain_name }}
           {% endif %}
           {% endfor %}
-          
+
           Please check the full report at: /opt/summitethic/reports/deployment-{{ deployment_id }}.md
       when: notification_channels is defined
-      
+
     - name: Display deployment summary
       debug:
         msg: |
@@ -250,27 +250,27 @@
           ========================================
           Deployment ID: {{ deployment_id }}
           Status: {{ deployment_status }}
-          
+
           Deployed Services:
           {% for service in deployed_services %}
           - {{ service.name }}: https://{{ service.subdomain | default(service.name) }}.{{ domain_name }}
           {% endfor %}
-          
+
           Next Steps:
           1. Verify all services are accessible
           2. Check monitoring dashboards
           3. Review security scan results
           4. Configure DNS records if needed
           ========================================
-          
+
   handlers:
     - name: reload nginx
       service:
         name: nginx
         state: reloaded
-        
+
     - name: restart services
       docker_compose:
         project_src: "/opt/summitethic/apps/{{ item }}"
-        restarted: yes
+        restarted: true
       loop: "{{ services | selectattr('enabled', 'equalto', true) | map(attribute='name') | list }}"

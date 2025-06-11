@@ -1,13 +1,14 @@
+---
 # roles/mautic/tasks/main.yml
 # Mautic installation for ethical marketing automation
 
 - name: Create Mautic directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: www-data
     group: docker
-    mode: '0755'
+    mode: "0755"
   loop:
     - /opt/summitethic/apps/mautic
     - /opt/summitethic/apps/mautic/config
@@ -16,24 +17,24 @@
     - /opt/summitethic/apps/mautic/media
 
 - name: Deploy Mautic docker-compose file
-  template:
+  ansible.builtin.template:
     src: docker-compose.mautic.yml.j2
     dest: /opt/summitethic/apps/mautic/docker-compose.yml
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
 
 - name: Deploy Mautic configuration
-  template:
+  ansible.builtin.template:
     src: mautic-config.php.j2
     dest: /opt/summitethic/apps/mautic/config/local.php
     owner: www-data
     group: docker
-    mode: '0640'
+    mode: "0640"
   notify: clear mautic cache
 
 - name: Create Mautic database
-  docker_container:
+  community.docker.docker_container:
     name: mautic-db-init
     image: postgres:{{ postgres_version }}
     state: started
@@ -60,7 +61,7 @@
     recreate: smart
 
 - name: Wait for Mautic to be ready
-  uri:
+  ansible.builtin.uri:
     url: "http://localhost:8083/s/login"
     status_code: 200
   register: mautic_ready
@@ -69,7 +70,7 @@
   delay: 10
 
 - name: Configure Mautic for Traefik
-  docker_container:
+  community.docker.docker_container:
     name: mautic
     labels:
       traefik.enable: "true"
@@ -81,7 +82,7 @@
       traefik.http.routers.mautic.middlewares: "security-headers@file"
 
 - name: Configure Mautic cron jobs
-  cron:
+  ansible.builtin.cron:
     name: "{{ item.name }}"
     minute: "{{ item.minute }}"
     hour: "{{ item.hour }}"
@@ -105,7 +106,7 @@
     mautic_signature: >-
       "Best regards,<br>{{ organization_name }} Team<br><br><small>This email was
       sent in accordance with GDPR and ethical marketing practices.</small>"
-  shell: |
+  ansible.builtin.shell: |
     docker exec mautic php /var/www/html/bin/console mautic:config:set \
       do_not_track_enabled=1 \
       anonymize_ip=1 \
@@ -116,15 +117,15 @@
   changed_when: mautic_config_result.rc == 0
 
 - name: Create Mautic backup script
-  template:
+  ansible.builtin.template:
     src: mautic-backup.sh.j2
     dest: /opt/summitethic/scripts/mautic-backup.sh
     owner: root
     group: root
-    mode: '0750'
+    mode: "0750"
 
 - name: Set up Mautic backup cron job
-  cron:
+  ansible.builtin.cron:
     name: "Mautic backup"
     minute: "0"
     hour: "3"
@@ -133,7 +134,7 @@
     state: present
 
 - name: Configure Mautic GDPR compliance
-  uri:
+  ansible.builtin.uri:
     url: "http://localhost:8083/api/config/edit"
     method: PATCH
     headers:
@@ -148,7 +149,7 @@
         track_contact_by_ip: false
 
 - name: Log Mautic deployment
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /var/log/summitethic/infrastructure-audit.log
     line: |
       {{ ansible_date_time.iso8601 }} - Mautic deployed

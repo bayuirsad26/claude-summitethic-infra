@@ -5,28 +5,28 @@
 
 - name: Initial Server Setup for SummitEthic Infrastructure
   hosts: all
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
   vars_prompt:
     - name: ansible_user_password
       prompt: "Enter password for ansible user"
-      private: yes
+      private: true
       encrypt: sha512_crypt
-      confirm: yes
+      confirm: true
       salt_size: 7
 
   tasks:
     # Ethical checkpoint: Document all changes
     - name: Create audit log directory
-      file:
+      ansible.builtin.file:
         path: /var/log/summitethic
         state: directory
         owner: root
         group: adm
-        mode: '0750'
+        mode: "0750"
 
     - name: Initialize infrastructure audit log
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /var/log/summitethic/infrastructure-audit.log
         line: |
           ===== INFRASTRUCTURE INITIALIZATION =====
@@ -35,66 +35,66 @@
           Target Host: {{ inventory_hostname }}
           Ansible Version: {{ ansible_version.full }}
           Ethical Principles Applied: Security, Transparency, Privacy
-        create: yes
-        mode: '0640'
+        create: true
+        mode: "0640"
         owner: root
         group: adm
 
     # System Updates
     - name: Update apt cache
-      apt:
-        update_cache: yes
+      ansible.builtin.apt:
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Upgrade all packages to latest version
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
-        autoremove: yes
-        autoclean: yes
+        autoremove: true
+        autoclean: true
       register: apt_upgrade
 
     - name: Log system upgrade
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /var/log/summitethic/infrastructure-audit.log
         line: "{{ ansible_date_time.iso8601 }} - System packages upgraded: {{ apt_upgrade.changed }}"
 
     # Create administrative user
     - name: Create ansible administrative user
-      user:
+      ansible.builtin.user:
         name: ansible
         password: "{{ ansible_user_password }}"
         groups: sudo
         shell: /bin/bash
         home: /home/ansible
-        createhome: yes
+        createhome: true
         state: present
 
     - name: Create .ssh directory for ansible user
-      file:
+      ansible.builtin.file:
         path: /home/ansible/.ssh
         state: directory
         owner: ansible
         group: ansible
-        mode: '0700'
+        mode: "0700"
 
     - name: Add SSH public key for ansible user
-      authorized_key:
+      ansible.posix.authorized_key:
         user: ansible
         key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
         state: present
-        exclusive: yes
+        exclusive: true
 
     - name: Configure sudoers for ansible user
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/sudoers.d/ansible
-        line: 'ansible ALL=(ALL) NOPASSWD:ALL'
-        create: yes
-        mode: '0440'
-        validate: 'visudo -cf %s'
+        line: "ansible ALL=(ALL) NOPASSWD:ALL"
+        create: true
+        mode: "0440"
+        validate: "visudo -cf %s"
 
     # Essential packages
     - name: Install essential packages
-      apt:
+      ansible.builtin.apt:
         name:
           - git
           - vim
@@ -126,80 +126,80 @@
 
     # Configure timezone
     - name: Set timezone to Asia/Jakarta
-      timezone:
+      community.general.timezone:
         name: Asia/Jakarta
 
     # Configure hostname
     - name: Set hostname
-      hostname:
+      ansible.builtin.hostname:
         name: "{{ inventory_hostname_short }}"
 
     - name: Update /etc/hosts
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: '^127\.0\.1\.1'
+        regexp: "^127\\.0\\.1\\.1"
         line: "127.0.1.1 {{ inventory_hostname }} {{ inventory_hostname_short }}"
         state: present
 
     # Configure swap (for VPS with limited RAM)
     - name: Check if swap file exists
-      stat:
+      ansible.builtin.stat:
         path: /swapfile
       register: swap_file_check
 
     - name: Create swap file
-      command: dd if=/dev/zero of=/swapfile bs=1M count=2048
+      ansible.builtin.command: dd if=/dev/zero of=/swapfile bs=1M count=2048
       when: not swap_file_check.stat.exists
 
     - name: Set swap file permissions
-      file:
+      ansible.builtin.file:
         path: /swapfile
         owner: root
         group: root
-        mode: '0600'
+        mode: "0600"
       when: not swap_file_check.stat.exists
 
     - name: Make swap file
-      command: mkswap /swapfile
+      ansible.builtin.command: mkswap /swapfile
       when: not swap_file_check.stat.exists
 
     - name: Enable swap file
-      command: swapon /swapfile
+      ansible.builtin.command: swapon /swapfile
       when: not swap_file_check.stat.exists
 
     - name: Add swap file to fstab
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/fstab
-        line: '/swapfile none swap sw 0 0'
+        line: "/swapfile none swap sw 0 0"
         state: present
 
     # Configure swappiness for better performance
     - name: Set swappiness value
-      sysctl:
+      ansible.posix.sysctl:
         name: vm.swappiness
-        value: '10'
+        value: "10"
         state: present
-        reload: yes
+        reload: true
 
     # Basic security hardening
     - name: Disable root SSH login
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
-        regexp: '^#?PermitRootLogin'
-        line: 'PermitRootLogin no'
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
         state: present
-      notify: restart sshd
+      notify: Restart sshd
 
     - name: Disable password authentication
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
-        regexp: '^#?PasswordAuthentication'
-        line: 'PasswordAuthentication no'
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
         state: present
-      notify: restart sshd
+      notify: Restart sshd
 
     - name: Configure SSH to use only strong ciphers
-      blockinfile:
+      ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config
         block: |
           # Strong ciphers only
@@ -207,38 +207,38 @@
           MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
           KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
         marker: "# {mark} ANSIBLE MANAGED BLOCK - Strong Ciphers"
-      notify: restart sshd
+      notify: Restart sshd
 
     # Configure automatic security updates
     - name: Install unattended-upgrades
-      apt:
+      ansible.builtin.apt:
         name: unattended-upgrades
         state: present
 
     - name: Configure unattended-upgrades
-      template:
+      ansible.builtin.template:
         src: ../templates/50unattended-upgrades.j2
         dest: /etc/apt/apt.conf.d/50unattended-upgrades
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
 
     - name: Enable automatic security updates
-      template:
+      ansible.builtin.template:
         src: ../templates/20auto-upgrades.j2
         dest: /etc/apt/apt.conf.d/20auto-upgrades
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
 
     # Configure NTP for time synchronization
     - name: Install chrony for NTP
-      apt:
+      ansible.builtin.apt:
         name: chrony
         state: present
 
     - name: Configure chrony
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /etc/chrony/chrony.conf
         line: "server {{ item }} iburst"
         state: present
@@ -247,16 +247,16 @@
         - 1.id.pool.ntp.org
         - 2.id.pool.ntp.org
         - 3.id.pool.ntp.org
-      notify: restart chrony
+      notify: Restart chrony
 
     # Create directory structure
     - name: Create SummitEthic directory structure
-      file:
+      ansible.builtin.file:
         path: "{{ item }}"
         state: directory
         owner: ansible
         group: docker
-        mode: '0755'
+        mode: "0755"
       loop:
         - /opt/summitethic
         - /opt/summitethic/apps
@@ -269,16 +269,16 @@
 
     # Configure MOTD with ethical message
     - name: Create custom MOTD
-      template:
+      ansible.builtin.template:
         src: ../templates/motd.j2
         dest: /etc/motd
         owner: root
         group: root
-        mode: '0644'
+        mode: "0644"
 
     # Configure bash aliases for convenience
     - name: Add useful bash aliases
-      blockinfile:
+      ansible.builtin.blockinfile:
         path: /home/ansible/.bashrc
         block: |
           # SummitEthic aliases
@@ -295,7 +295,7 @@
 
     # Final audit log entry
     - name: Log successful initial setup
-      lineinfile:
+      ansible.builtin.lineinfile:
         path: /var/log/summitethic/infrastructure-audit.log
         line: |
           {{ ansible_date_time.iso8601 }} - Initial setup completed successfully
@@ -308,20 +308,20 @@
           - Next step: Run security hardening playbook
 
     - name: Display completion message
-      debug:
+      ansible.builtin.debug:
         msg: |
           ========================================
           Initial setup completed successfully!
-          
+
           Server: {{ inventory_hostname }}
           Admin user: ansible
-          
+
           Security measures applied:
           - SSH key-only authentication
           - Root login disabled
           - Strong SSH ciphers enforced
           - Automatic security updates enabled
-          
+
           Next steps:
           1. Test SSH access with ansible user
           2. Run security hardening playbook
@@ -329,12 +329,12 @@
           ========================================
 
   handlers:
-    - name: restart sshd
-      service:
+    - name: Restart sshd
+      ansible.builtin.service:
         name: ssh
         state: restarted
 
-    - name: restart chrony
-      service:
+    - name: Restart chrony
+      ansible.builtin.service:
         name: chrony
         state: restarted

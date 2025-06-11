@@ -8,6 +8,6 @@
       - traefik
 
 - name: Reload Traefik
-  docker_container:
+  community.docker.docker_container:
     name: traefik
     restart: true

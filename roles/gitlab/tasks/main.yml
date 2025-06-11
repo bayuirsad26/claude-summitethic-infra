@@ -1,3 +1,4 @@
+---
 # roles/gitlab/tasks/main.yml
 # GitLab CE installation with ethical CI/CD practices
 
@@ -7,7 +8,7 @@
     state: directory
     owner: root
     group: docker
-    mode: '0755'
+    mode: "0755"
   loop:
     - /opt/summitethic/apps/gitlab
     - /opt/summitethic/apps/gitlab/config
@@ -22,7 +23,7 @@
     dest: /opt/summitethic/apps/gitlab/docker-compose.yml
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
 
 - name: Deploy GitLab configuration
   ansible.builtin.template:
@@ -30,7 +31,7 @@
     dest: /opt/summitethic/apps/gitlab/config/gitlab.rb
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
   notify: Reconfigure GitLab
 
 - name: Deploy GitLab runner configuration
@@ -39,7 +40,7 @@
     dest: /opt/summitethic/apps/gitlab-runner/config/config.toml
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
 
 - name: Create GitLab backup script
   ansible.builtin.template:
@@ -47,7 +48,7 @@
     dest: /opt/summitethic/scripts/gitlab-backup.sh
     owner: root
     group: root
-    mode: '0750'
+    mode: "0750"
 
 - name: Start GitLab containers
   community.docker.docker_compose_v2:

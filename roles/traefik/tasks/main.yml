@@ -3,12 +3,12 @@
 # Traefik setup with automatic SSL and security features
 
 - name: Create Traefik directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: root
     group: docker
-    mode: '0750'
+    mode: "0750"
   loop:
     - /opt/traefik
     - /opt/traefik/configs
@@ -16,30 +16,30 @@
     - /opt/traefik/logs
 
 - name: Generate Traefik dashboard password
-  htpasswd:
+  community.general.htpasswd:
     path: /opt/traefik/.htpasswd
     name: "{{ traefik_dashboard_user | default('admin') }}"
     password: "{{ traefik_dashboard_password }}"
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
 
 - name: Deploy Traefik static configuration
-  template:
+  ansible.builtin.template:
     src: traefik.yml.j2
     dest: /opt/traefik/traefik.yml
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
   notify: Restart Traefik
 
 - name: Deploy Traefik dynamic configurations
-  template:
+  ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "/opt/traefik/configs/{{ item }}"
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
   loop:
     - middlewares.yml
     - routers.yml
@@ -48,22 +48,22 @@
   notify: Reload Traefik
 
 - name: Create acme.json for Let's Encrypt certificates
-  file:
+  ansible.builtin.file:
     path: /opt/traefik/certs/acme.json
     state: touch
     owner: root
     group: docker
-    mode: '0600'
+    mode: "0600"
     modification_time: preserve
     access_time: preserve
 
 - name: Deploy Traefik docker-compose
-  template:
+  ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: /opt/traefik/docker-compose.yml
     owner: root
     group: docker
-    mode: '0640'
+    mode: "0640"
 
 - name: Start Traefik container
   docker_compose:
@@ -73,7 +73,7 @@
     recreate: smart
 
 - name: Wait for Traefik to be ready
-  uri:
+  ansible.builtin.uri:
     url: "http://localhost:8080/api/rawdata"
     status_code: 200
   register: result
