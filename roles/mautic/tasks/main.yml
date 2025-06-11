@@ -1,4 +1,3 @@
----
 # roles/mautic/tasks/main.yml
 # Mautic installation for ethical marketing automation
 
@@ -38,8 +37,8 @@
     name: mautic-db-init
     image: postgres:{{ postgres_version }}
     state: started
-    cleanup: yes
-    detach: no
+    cleanup: true
+    detach: false
     networks:
       - backend
     env:
@@ -57,7 +56,7 @@
   docker_compose:
     project_src: /opt/summitethic/apps/mautic
     state: present
-    pull: yes
+    pull: true
     recreate: smart
 
 - name: Wait for Mautic to be ready
@@ -100,13 +99,19 @@
     - { name: "Mautic cleanup", minute: "0", hour: "3", command: "mautic:maintenance:cleanup --days-old=30" }
 
 - name: Configure Mautic ethical settings
+  vars:
+    # Define the long signature string here for readability and to avoid line length errors.
+    # The '>-' YAML scalar removes newlines, creating a single line string for the shell.
+    mautic_signature: >-
+      "Best regards,<br>{{ organization_name }} Team<br><br><small>This email was
+      sent in accordance with GDPR and ethical marketing practices.</small>"
   shell: |
     docker exec mautic php /var/www/html/bin/console mautic:config:set \
       do_not_track_enabled=1 \
       anonymize_ip=1 \
       unsubscribe_text="You are receiving this email because you subscribed to our list. You can unsubscribe at any time." \
       postal_address="{{ organization_name }}, {{ organization_city }}, {{ organization_country }}" \
-      default_signature="Best regards,<br>{{ organization_name }} Team<br><br><small>This email was sent in accordance with GDPR and ethical marketing practices.</small>"
+      default_signature={{ mautic_signature }}
   register: mautic_config_result
   changed_when: mautic_config_result.rc == 0
 

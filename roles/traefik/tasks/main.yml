@@ -31,7 +31,7 @@
     owner: root
     group: docker
     mode: '0640'
-  notify: restart traefik
+  notify: Restart Traefik
 
 - name: Deploy Traefik dynamic configurations
   template:
@@ -45,7 +45,7 @@
     - routers.yml
     - services.yml
     - tls.yml
-  notify: reload traefik
+  notify: Reload Traefik
 
 - name: Create acme.json for Let's Encrypt certificates
   file:
@@ -69,7 +69,7 @@
   docker_compose:
     project_src: /opt/traefik
     state: present
-    pull: yes
+    pull: true
     recreate: smart
 
 - name: Wait for Traefik to be ready

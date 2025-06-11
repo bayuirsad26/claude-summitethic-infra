@@ -1,0 +1,56 @@
+# .gitignore for SummitEthic Ansible Infrastructure
+
+### Vault & Sensitive Files ###
+# Never commit your vault password file or unencrypted secrets!
+.vault_pass
+vault/secrets.yml
+secrets.yml.dec
+
+### Ansible Temporary & Cache Files ###
+# Ignore Ansible's temporary files and local fact cache.
+*.retry
+*.log
+ansible-facts-cache/
+/tmp/ansible-*
+*.vault
+
+### Downloaded Roles & Collections ###
+# Ignore roles and collections managed by ansible-galaxy.
+# The requirements.yml file should be committed instead.
+.ansible/
+roles/geerlingguy.*
+
+### Python ###
+# Ignore Python virtual environments and cache files.
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+### Editor & IDE Directories ###
+# Ignore local editor configuration.
+.vscode/
+.idea/
+*.swp
+*.swo
+
+### Generated Files & Logs ###
+# Ignore generated reports, logs, and other artifacts.
+*.xml
+*.html
+*.json
+coverage/
+test-results/
+dependency-check-report.*
+license_report.html
+deployment-record.json
+/tree
+audit.log
+*.log
+
+### OS-specific ###
+# Ignore macOS and Windows system files.
+.DS_Store
+Thumbs.db

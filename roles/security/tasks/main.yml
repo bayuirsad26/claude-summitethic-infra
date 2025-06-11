@@ -1,16 +1,15 @@
----
 # roles/security/tasks/main.yml
 # Security hardening for SummitEthic infrastructure
 
 - name: System Security - Update and upgrade packages
-  apt:
-    update_cache: yes
+  ansible.builtin.apt:
+    update_cache: true
     upgrade: dist
-    autoremove: yes
-    autoclean: yes
+    autoremove: true
+    autoclean: true
 
 - name: Install security packages
-  apt:
+  ansible.builtin.apt:
     name:
       - ufw
       - fail2ban
@@ -28,18 +27,18 @@
 
 # SSH Hardening
 - name: Configure SSH for security
-  template:
+  ansible.builtin.template:
     src: sshd_config.j2
     dest: /etc/ssh/sshd_config
     owner: root
     group: root
     mode: '0600'
-    backup: yes
+    backup: true
     validate: '/usr/sbin/sshd -t -f %s'
   notify: restart sshd
 
 - name: Set SSH key permissions
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     owner: root
     group: root
@@ -51,7 +50,7 @@
 
 # Firewall Configuration
 - name: Configure UFW defaults
-  ufw:
+  community.general.ufw:
     direction: "{{ item.direction }}"
     policy: "{{ item.policy }}"
   loop:
@@ -60,7 +59,7 @@
   notify: restart ufw
 
 - name: Configure UFW rules
-  ufw:
+  community.general.ufw:
     rule: "{{ item.rule }}"
     port: "{{ item.port }}"
     proto: "{{ item.proto }}"
@@ -74,13 +73,13 @@
   notify: restart ufw
 
 - name: Enable UFW
-  ufw:
+  community.general.ufw:
     state: enabled
     logging: 'on'
 
 # Fail2ban Configuration
 - name: Configure fail2ban
-  template:
+  ansible.builtin.template:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     owner: root
@@ -93,7 +92,7 @@
 
 # System Hardening
 - name: Configure system security limits
-  template:
+  ansible.builtin.template:
     src: limits.conf.j2
     dest: /etc/security/limits.d/99-summitethic.conf
     owner: root
@@ -101,11 +100,11 @@
     mode: '0644'
 
 - name: Configure sysctl for security
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     state: present
-    reload: yes
+    reload: true
   loop:
     # Network security
     - { name: 'net.ipv4.tcp_syncookies', value: '1' }
@@ -136,17 +135,17 @@
 
 # Audit Configuration
 - name: Configure auditd rules
-  template:
+  ansible.builtin.template:
     src: audit.rules.j2
     dest: /etc/audit/rules.d/summitethic.rules
     owner: root
     group: root
     mode: '0640'
-  notify: restart auditd
+  notify: Restart Auditd
 
 # AppArmor Profiles
 - name: Copy custom AppArmor profiles
-  copy:
+  ansible.builtin.copy:
     src: "apparmor/{{ item }}"
     dest: "/etc/apparmor.d/{{ item }}"
     owner: root
@@ -161,22 +160,22 @@
 - name: Install Vault for secrets management
   block:
     - name: Add HashiCorp GPG key
-      apt_key:
+      ansible.builtin.apt_key:
         url: https://apt.releases.hashicorp.com/gpg
         state: present
 
     - name: Add HashiCorp repository
-      apt_repository:
+      ansible.builtin.apt_repository:
         repo: "deb [arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
         state: present
 
     - name: Install Vault
-      apt:
+      ansible.builtin.apt:
         name: vault
         state: present
 
     - name: Configure Vault
-      template:
+      ansible.builtin.template:
         src: vault.hcl.j2
         dest: /etc/vault.d/vault.hcl
         owner: vault
@@ -185,7 +184,7 @@
       notify: restart vault
 
     - name: Initialize Vault (if not already initialized)
-      shell: |
+      ansible.builtin.shell: |
         vault operator init -key-shares=5 -key-threshold=3 \
           -format=json > /opt/vault/init.json
       args:
@@ -195,7 +194,7 @@
 
 # Log Rotation
 - name: Configure log rotation for security logs
-  template:
+  ansible.builtin.template:
     src: logrotate-security.j2
     dest: /etc/logrotate.d/security
     owner: root
@@ -204,16 +203,16 @@
 
 # Create security user
 - name: Create security audit user
-  user:
+  ansible.builtin.user:
     name: secaudit
     groups: adm,systemd-journal
     shell: /bin/bash
     home: /home/secaudit
-    createhome: yes
+    createhome: true
     state: present
 
 - name: Configure sudo for security audit
-  copy:
+  ansible.builtin.copy:
     content: |
       # Security audit user - read-only access to logs
       secaudit ALL=(ALL) NOPASSWD: /usr/bin/journalctl, /usr/bin/aureport, /usr/bin/ausearch

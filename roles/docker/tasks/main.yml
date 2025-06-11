@@ -1,9 +1,8 @@
----
 # roles/docker/tasks/main.yml
 # Docker installation with security hardening for SummitEthic
 
 - name: Install Docker prerequisites
-  apt:
+  ansible.builtin.apt:
     name:
       - apt-transport-https
       - ca-certificates
@@ -13,7 +12,7 @@
       - python3-pip
       - python3-setuptools
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Add Docker GPG key
   ansible.builtin.get_url:
@@ -23,13 +22,16 @@
     checksum: sha256:1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
 
 - name: Add Docker repository
-  apt_repository:
-    repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
     state: present
     filename: docker
 
 - name: Install Docker Engine
-  apt:
+  ansible.builtin.apt:
     name:
       - docker-ce
       - docker-ce-cli
@@ -37,10 +39,10 @@
       - docker-buildx-plugin
       - docker-compose-plugin
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Install Docker SDK for Python
-  pip:
+  ansible.builtin.pip:
     name:
       - docker
       - docker-compose
@@ -48,72 +50,73 @@
 
 # Security Hardening
 - name: Create docker group
-  group:
+  ansible.builtin.group:
     name: docker
     state: present
 
 - name: Add ansible user to docker group
-  user:
+  ansible.builtin.user:
     name: "{{ ansible_user }}"
     groups: docker
-    append: yes
+    append: true
 
 - name: Configure Docker daemon with security options
-  template:
+  ansible.builtin.template:
     src: daemon.json.j2
     dest: /etc/docker/daemon.json
     owner: root
     group: root
     mode: '0644'
-  notify: restart docker
+  notify: Restart Docker
 
 - name: Create Docker service override directory
-  file:
+  ansible.builtin.file:
     path: /etc/systemd/system/docker.service.d
     state: directory
     mode: '0755'
 
 - name: Configure Docker service security overrides
-  template:
+  ansible.builtin.template:
     src: docker-override.conf.j2
     dest: /etc/systemd/system/docker.service.d/override.conf
     owner: root
     group: root
     mode: '0644'
-  notify: restart docker
+  notify: Restart Docker
 
 - name: Enable and start Docker
-  systemd:
+  ansible.builtin.systemd:
     name: docker
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true
 
 # Docker Security Benchmarks
 - name: Ensure Docker socket permissions are restricted
-  file:
+  ansible.builtin.file:
     path: /var/run/docker.sock
     owner: root
     group: docker
     mode: '0660'
 
 - name: Enable Docker Content Trust for image verification
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /etc/environment
     line: 'DOCKER_CONTENT_TRUST=1'
-    create: yes
+    create: true
+    mode: '0644'
 
 - name: Create Docker audit rules
-  template:
+  ansible.builtin.template:
     src: docker-audit.rules.j2
     dest: /etc/audit/rules.d/docker.rules
     owner: root
     group: root
     mode: '0640'
-  notify: restart auditd
+  notify: Restart Auditd
 
 - name: Configure Docker log rotation
-  template:
+  ansible.builtin.template:
     src: docker-logrotate.j2
     dest: /etc/logrotate.d/docker
     owner: root
@@ -121,7 +124,7 @@
     mode: '0644'
 
 - name: Run Docker CIS benchmark check
-  shell: |
+  ansible.builtin.shell: |
     docker run --rm --net host --pid host --userns host --cap-add audit_control \
       -e DOCKER_CONTENT_TRUST=$DOCKER_CONTENT_TRUST \
       -v /etc:/etc:ro \
@@ -137,7 +140,7 @@
   failed_when: false
 
 - name: Save Docker security benchmark results
-  copy:
+  ansible.builtin.copy:
     content: "{{ docker_bench_output.stdout }}"
     dest: "/var/log/docker-bench-security-{{ ansible_date_time.date }}.log"
     owner: root

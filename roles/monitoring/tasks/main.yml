@@ -88,7 +88,7 @@
   docker_compose:
     project_src: /opt/monitoring
     state: present
-    pull: yes
+    pull: true
     recreate: smart
 
 - name: Configure Traefik labels for monitoring services

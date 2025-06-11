@@ -1,9 +1,8 @@
----
 # roles/gitlab/tasks/main.yml
 # GitLab CE installation with ethical CI/CD practices
 
 - name: Create GitLab directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     state: directory
     owner: root
@@ -18,7 +17,7 @@
     - /opt/summitethic/apps/gitlab-runner/config
 
 - name: Deploy GitLab docker-compose file
-  template:
+  ansible.builtin.template:
     src: docker-compose.gitlab.yml.j2
     dest: /opt/summitethic/apps/gitlab/docker-compose.yml
     owner: root
@@ -26,16 +25,16 @@
     mode: '0640'
 
 - name: Deploy GitLab configuration
-  template:
+  ansible.builtin.template:
     src: gitlab.rb.j2
     dest: /opt/summitethic/apps/gitlab/config/gitlab.rb
     owner: root
     group: docker
     mode: '0640'
-  notify: reconfigure gitlab
+  notify: Reconfigure GitLab
 
 - name: Deploy GitLab runner configuration
-  template:
+  ansible.builtin.template:
     src: gitlab-runner-config.toml.j2
     dest: /opt/summitethic/apps/gitlab-runner/config/config.toml
     owner: root
@@ -43,7 +42,7 @@
     mode: '0640'
 
 - name: Create GitLab backup script
-  template:
+  ansible.builtin.template:
     src: gitlab-backup.sh.j2
     dest: /opt/summitethic/scripts/gitlab-backup.sh
     owner: root
@@ -51,25 +50,18 @@
     mode: '0750'
 
 - name: Start GitLab containers
-  docker_compose:
+  community.docker.docker_compose_v2:
     project_src: /opt/summitethic/apps/gitlab
     state: present
-    pull: yes
-    recreate: smart
-  register: gitlab_start
+    pull: policy
+    recreate: auto
+  notify: Wait for GitLab to be ready
 
-- name: Wait for GitLab to be ready
-  uri:
-    url: "http://localhost:8080/users/sign_in"
-    status_code: 200
-  register: gitlab_ready
-  until: gitlab_ready.status == 200
-  retries: 60
-  delay: 10
-  when: gitlab_start.changed
+- name: Force handler execution to ensure GitLab is ready
+  ansible.builtin.meta: flush_handlers
 
 - name: Configure GitLab for Traefik
-  docker_container:
+  community.docker.docker_container:
     name: gitlab
     labels:
       traefik.enable: "true"
@@ -86,7 +78,7 @@
       traefik.http.services.gitlab-registry.loadbalancer.server.port: "5000"
 
 - name: Set up GitLab backup cron job
-  cron:
+  ansible.builtin.cron:
     name: "GitLab backup"
     minute: "0"
     hour: "2"
@@ -95,7 +87,7 @@
     state: present
 
 - name: Configure GitLab CI/CD settings
-  uri:
+  ansible.builtin.uri:
     url: "http://localhost:8080/api/v4/application/settings"
     method: PUT
     headers:
@@ -112,7 +104,7 @@
   when: gitlab_admin_token is defined
 
 - name: Create GitLab audit log configuration
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /var/log/summitethic/infrastructure-audit.log
     line: |
       {{ ansible_date_time.iso8601 }} - GitLab CE deployed

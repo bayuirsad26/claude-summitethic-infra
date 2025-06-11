@@ -1,0 +1,16 @@
+# roles/gitlab/handlers/main.yml
+# Handlers for the GitLab role
+
+- name: Reconfigure GitLab
+  community.docker.docker_container_exec:
+    container: gitlab
+    command: gitlab-ctl reconfigure
+
+- name: Wait for GitLab to be ready
+  ansible.builtin.uri:
+    url: "http://localhost:8080/users/sign_in"
+    status_code: 200
+  register: gitlab_ready
+  until: gitlab_ready.status == 200
+  retries: 60
+  delay: 10

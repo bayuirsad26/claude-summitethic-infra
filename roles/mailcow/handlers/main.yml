@@ -1,0 +1,14 @@
+# roles/mailcow/handlers/main.yml
+# Handlers for the Mailcow role
+
+- name: Configure Mailcow admin account
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:8080/api/v1/add/domain-admin"
+    method: POST
+    headers:
+      "X-API-Key": "{{ vault_mailcow_api_key }}"
+    body_format: json
+    body:
+      username: "admin@{{ domain_name }}"
+      password: "{{ vault_mailcow_admin_password }}"
+      domains: ["{{ domain_name }}"]
