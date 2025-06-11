@@ -1,0 +1,194 @@
+---
+# roles/mailcow/tasks/main.yml
+# Mailcow installation for ethical email management
+
+- name: Install Mailcow dependencies
+  apt:
+    name:
+      - git
+      - curl
+      - wget
+      - docker-compose
+    state: present
+
+- name: Clone Mailcow repository
+  git:
+    repo: https://github.com/mailcow/mailcow-dockerized
+    dest: /opt/summitethic/apps/mailcow
+    version: master
+    force: yes
+
+- name: Generate Mailcow configuration
+  shell: |
+    cd /opt/summitethic/apps/mailcow
+    ./generate_config.sh
+  args:
+    creates: /opt/summitethic/apps/mailcow/mailcow.conf
+  environment:
+    MAILCOW_HOSTNAME: "mail.{{ domain_name }}"
+    MAILCOW_TZ: "{{ system_timezone }}"
+
+- name: Configure Mailcow settings
+  lineinfile:
+    path: /opt/summitethic/apps/mailcow/mailcow.conf
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "MAILCOW_HOSTNAME", value: "mail.{{ domain_name }}" }
+    - { key: "MAILCOW_PASS_SCHEME", value: "BLF-CRYPT" }
+    - { key: "DBNAME", value: "mailcow" }
+    - { key: "DBUSER", value: "mailcow" }
+    - { key: "DBPASS", value: "{{ vault_mailcow_db_password }}" }
+    - { key: "DBROOT", value: "{{ vault_mysql_root_password }}" }
+    - { key: "HTTP_PORT", value: "8080" }
+    - { key: "HTTPS_PORT", value: "8443" }
+    - { key: "HTTP_BIND", value: "127.0.0.1" }
+    - { key: "HTTPS_BIND", value: "127.0.0.1" }
+    - { key: "SKIP_LETS_ENCRYPT", value: "y" }  # We use Traefik for SSL
+    - { key: "SKIP_SOGO", value: "n" }
+    - { key: "SKIP_SOLR", value: "n" }
+    - { key: "SKIP_CLAMD", value: "n" }
+    - { key: "ADDITIONAL_SAN", value: "mail.{{ domain_name }},smtp.{{ domain_name }},imap.{{ domain_name }}" }
+    - { key: "TZ", value: "{{ system_timezone }}" }
+    - { key: "COMPOSE_PROJECT_NAME", value: "mailcow" }
+    - { key: "WATCHDOG_NOTIFY_EMAIL", value: "{{ vault_mailcow_admin_email }}" }
+    # Ethical settings
+    - { key: "MAILDIR_GC_TIME", value: "30" }  # Privacy: Auto-delete old mail
+    - { key: "LOG_LINES", value: "1000" }  # Privacy: Limit log retention
+
+- name: Create custom docker-compose override
+  template:
+    src: docker-compose.override.yml.j2
+    dest: /opt/summitethic/apps/mailcow/docker-compose.override.yml
+    owner: root
+    group: docker
+    mode: '0640'
+
+- name: Configure Mailcow for Traefik
+  blockinfile:
+    path: /opt/summitethic/apps/mailcow/docker-compose.override.yml
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Traefik Labels"
+    block: |
+      services:
+        nginx-mailcow:
+          labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.mailcow.rule=Host(`mail.{{ domain_name }}`)"
+            - "traefik.http.routers.mailcow.entrypoints=websecure"
+            - "traefik.http.routers.mailcow.tls=true"
+            - "traefik.http.routers.mailcow.tls.certresolver=letsencrypt"
+            - "traefik.http.services.mailcow.loadbalancer.server.port=8080"
+            - "traefik.http.routers.mailcow.middlewares=security-headers@file"
+          networks:
+            - frontend
+            - mailcow-network
+
+- name: Configure DNS records for mail
+  debug:
+    msg: |
+      Please configure the following DNS records in Cloudflare:
+      
+      MX Record:
+      - Name: @
+      - Type: MX
+      - Priority: 10
+      - Target: mail.{{ domain_name }}
+      
+      A Records:
+      - mail.{{ domain_name }} -> {{ ansible_host }}
+      - smtp.{{ domain_name }} -> {{ ansible_host }}
+      - imap.{{ domain_name }} -> {{ ansible_host }}
+      
+      SPF Record:
+      - Name: @
+      - Type: TXT
+      - Value: "v=spf1 mx a ip4:{{ ansible_host }} ~all"
+      
+      DMARC Record:
+      - Name: _dmarc
+      - Type: TXT
+      - Value: "v=DMARC1; p=quarantine; rua=mailto:dmarc@{{ domain_name }}; ruf=mailto:dmarc@{{ domain_name }}; fo=1"
+      
+      DKIM will be configured after Mailcow starts.
+
+- name: Pull Mailcow images
+  shell: |
+    cd /opt/summitethic/apps/mailcow
+    docker-compose pull
+  register: mailcow_pull
+
+- name: Start Mailcow
+  shell: |
+    cd /opt/summitethic/apps/mailcow
+    docker-compose up -d
+  register: mailcow_start
+
+- name: Wait for Mailcow to be ready
+  uri:
+    url: "http://127.0.0.1:8080/api/v1/get/status/containers"
+    status_code: 200
+  register: mailcow_ready
+  until: mailcow_ready.status == 200
+  retries: 30
+  delay: 10
+
+- name: Configure Mailcow admin account
+  uri:
+    url: "http://127.0.0.1:8080/api/v1/add/domain-admin"
+    method: POST
+    headers:
+      X-API-Key: "{{ vault_mailcow_api_key }}"
+    body_format: json
+    body:
+      username: "admin@{{ domain_name }}"
+      password: "{{ vault_mailcow_admin_password }}"
+      domains: ["{{ domain_name }}"]
+  when: mailcow_start.changed
+
+- name: Create backup script for Mailcow
+  template:
+    src: mailcow-backup.sh.j2
+    dest: /opt/summitethic/scripts/mailcow-backup.sh
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Set up Mailcow backup cron job
+  cron:
+    name: "Mailcow backup"
+    minute: "30"
+    hour: "2"
+    job: "/opt/summitethic/scripts/mailcow-backup.sh >> /var/log/summitethic/mailcow-backup.log 2>&1"
+    user: root
+    state: present
+
+- name: Configure Mailcow security settings
+  uri:
+    url: "http://127.0.0.1:8080/api/v1/edit/mailbox"
+    method: POST
+    headers:
+      X-API-Key: "{{ vault_mailcow_api_key }}"
+    body_format: json
+    body:
+      force_pw_update: 90  # Force password change every 90 days
+      tls_enforce_in: 1    # Enforce TLS for incoming mail
+      tls_enforce_out: 1   # Enforce TLS for outgoing mail
+
+- name: Log Mailcow deployment
+  lineinfile:
+    path: /var/log/summitethic/infrastructure-audit.log
+    line: |
+      {{ ansible_date_time.iso8601 }} - Mailcow deployed
+      - Hostname: mail.{{ domain_name }}
+      - Features enabled:
+        - Anti-spam (Rspamd)
+        - Anti-virus (ClamAV)
+        - Webmail (SOGo)
+        - Full-text search (Solr)
+        - TLS enforcement
+        - DKIM/SPF/DMARC
+      - Ethical considerations:
+        - Privacy-focused configuration
+        - Automatic old mail deletion
+        - Limited log retention
+        - Strong password policies

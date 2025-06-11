@@ -1,0 +1,133 @@
+---
+# roles/mautic/templates/docker-compose.mautic.yml.j2
+version: '3.8'
+
+services:
+  mautic:
+    image: mautic/mautic:{{ mautic_version | default('4-apache') }}
+    container_name: mautic
+    restart: unless-stopped
+    environment:
+      - MAUTIC_DB_HOST=postgres
+      - MAUTIC_DB_PORT=5432
+      - MAUTIC_DB_NAME={{ mautic_config.db_name }}
+      - MAUTIC_DB_USER={{ mautic_config.db_user }}
+      - MAUTIC_DB_PASSWORD={{ mautic_config.db_password }}
+      - MAUTIC_SITE_URL=https://marketing.{{ domain_name }}
+      - MAUTIC_ADMIN_EMAIL={{ mautic_config.admin_email }}
+      - MAUTIC_ADMIN_PASSWORD={{ mautic_config.admin_password }}
+      - MAUTIC_TRUSTED_PROXIES=["0.0.0.0/0"]
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_MAX_UPLOAD=64M
+      - PHP_MAX_EXECUTION_TIME=300
+      # Ethical settings
+      - MAUTIC_STATS_IP_LOOKUP_AUTH=
+      - MAUTIC_STATS_IP_LOOKUP_URL=
+      - MAUTIC_DO_NOT_TRACK_ENABLED=1
+      - MAUTIC_ANONYMIZE_IP=1
+    volumes:
+      - ./config:/var/www/html/app/config
+      - ./data:/var/www/html/var
+      - ./logs:/var/www/html/var/logs
+      - ./media:/var/www/html/media
+      - ./themes:/var/www/html/themes
+      - ./plugins:/var/www/html/plugins
+    networks:
+      - frontend
+      - backend
+    ports:
+      - "127.0.0.1:8083:80"
+    depends_on:
+      - mautic-db
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: {{ services | selectattr('name', 'equalto', 'mautic') | map(attribute='resources.memory') | first | default('2G') }}
+          cpus: '{{ services | selectattr('name', 'equalto', 'mautic') | map(attribute='resources.cpu') | first | default('1') }}'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/s/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=mautic,component=app"
+
+  mautic-db:
+    image: postgres:{{ postgres_version }}
+    container_name: mautic-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB={{ mautic_config.db_name }}
+      - POSTGRES_USER={{ mautic_config.db_user }}
+      - POSTGRES_PASSWORD={{ mautic_config.db_password }}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8 --locale=en_US.UTF-8
+    volumes:
+      - mautic_db_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ mautic_config.db_user }}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=mautic,component=database"
+
+  mautic-redis:
+    image: redis:7-alpine
+    container_name: mautic-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - mautic_redis_data:/data
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=mautic,component=cache"
+
+networks:
+  frontend:
+    external: true
+  backend:
+    external: true
+
+volumes:
+  mautic_db_data:
+    driver: local
+  mautic_redis_data:
+    driver: local

@@ -1,0 +1,127 @@
+---
+# roles/gitlab/tasks/main.yml
+# GitLab CE installation with ethical CI/CD practices
+
+- name: Create GitLab directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: docker
+    mode: '0755'
+  loop:
+    - /opt/summitethic/apps/gitlab
+    - /opt/summitethic/apps/gitlab/config
+    - /opt/summitethic/apps/gitlab/data
+    - /opt/summitethic/apps/gitlab/logs
+    - /opt/summitethic/apps/gitlab-runner
+    - /opt/summitethic/apps/gitlab-runner/config
+
+- name: Deploy GitLab docker-compose file
+  template:
+    src: docker-compose.gitlab.yml.j2
+    dest: /opt/summitethic/apps/gitlab/docker-compose.yml
+    owner: root
+    group: docker
+    mode: '0640'
+
+- name: Deploy GitLab configuration
+  template:
+    src: gitlab.rb.j2
+    dest: /opt/summitethic/apps/gitlab/config/gitlab.rb
+    owner: root
+    group: docker
+    mode: '0640'
+  notify: reconfigure gitlab
+
+- name: Deploy GitLab runner configuration
+  template:
+    src: gitlab-runner-config.toml.j2
+    dest: /opt/summitethic/apps/gitlab-runner/config/config.toml
+    owner: root
+    group: docker
+    mode: '0640'
+
+- name: Create GitLab backup script
+  template:
+    src: gitlab-backup.sh.j2
+    dest: /opt/summitethic/scripts/gitlab-backup.sh
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Start GitLab containers
+  docker_compose:
+    project_src: /opt/summitethic/apps/gitlab
+    state: present
+    pull: yes
+    recreate: smart
+  register: gitlab_start
+
+- name: Wait for GitLab to be ready
+  uri:
+    url: "http://localhost:8080/users/sign_in"
+    status_code: 200
+  register: gitlab_ready
+  until: gitlab_ready.status == 200
+  retries: 60
+  delay: 10
+  when: gitlab_start.changed
+
+- name: Configure GitLab for Traefik
+  docker_container:
+    name: gitlab
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.gitlab.rule: "Host(`git.{{ domain_name }}`)"
+      traefik.http.routers.gitlab.entrypoints: "websecure"
+      traefik.http.routers.gitlab.tls: "true"
+      traefik.http.routers.gitlab.tls.certresolver: "letsencrypt"
+      traefik.http.services.gitlab.loadbalancer.server.port: "80"
+      # Registry
+      traefik.http.routers.gitlab-registry.rule: "Host(`registry.{{ domain_name }}`)"
+      traefik.http.routers.gitlab-registry.entrypoints: "websecure"
+      traefik.http.routers.gitlab-registry.tls: "true"
+      traefik.http.routers.gitlab-registry.tls.certresolver: "letsencrypt"
+      traefik.http.services.gitlab-registry.loadbalancer.server.port: "5000"
+
+- name: Set up GitLab backup cron job
+  cron:
+    name: "GitLab backup"
+    minute: "0"
+    hour: "2"
+    job: "/opt/summitethic/scripts/gitlab-backup.sh >> /var/log/summitethic/gitlab-backup.log 2>&1"
+    user: root
+    state: present
+
+- name: Configure GitLab CI/CD settings
+  uri:
+    url: "http://localhost:8080/api/v4/application/settings"
+    method: PUT
+    headers:
+      PRIVATE-TOKEN: "{{ gitlab_admin_token }}"
+    body_format: json
+    body:
+      shared_runners_enabled: true
+      auto_devops_enabled: false
+      container_registry_token_expire_delay: 30
+      default_artifacts_expire_in: "1 week"
+      max_artifacts_size: 1000
+      max_pages_size: 1000
+      terminal_max_session_time: 3600
+  when: gitlab_admin_token is defined
+
+- name: Create GitLab audit log configuration
+  lineinfile:
+    path: /var/log/summitethic/infrastructure-audit.log
+    line: |
+      {{ ansible_date_time.iso8601 }} - GitLab CE deployed
+      - Version: {{ gitlab_version | default('latest') }}
+      - URL: https://git.{{ domain_name }}
+      - Registry: https://registry.{{ domain_name }}
+      - Ethical features enabled:
+        - Audit events logging
+        - Compliance framework
+        - Secure CI/CD pipelines
+        - Container scanning
+        - License compliance

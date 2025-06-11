@@ -1,0 +1,220 @@
+---
+# inventories/production/group_vars/all.yml
+# Global variables for all hosts with ethical considerations
+
+# Organization Information
+organization_name: SummitEthic
+organization_email: admin@summitethic.com
+organization_country: ID
+organization_state: DI Yogyakarta
+organization_city: Yogyakarta
+
+# Ethical Principles Configuration
+ethical_principles:
+  transparency:
+    enabled: true
+    audit_all_changes: true
+    public_documentation: true
+    open_source_first: true
+  
+  security:
+    enabled: true
+    encryption_at_rest: true
+    encryption_in_transit: true
+    zero_trust_model: true
+    regular_security_audits: true
+  
+  privacy:
+    enabled: true
+    data_minimization: true
+    user_consent_required: true
+    gdpr_compliance: true
+    right_to_be_forgotten: true
+  
+  sustainability:
+    enabled: true
+    resource_optimization: true
+    green_coding_practices: true
+    efficient_caching: true
+
+# System Configuration
+system_locale: en_US.UTF-8
+system_timezone: Asia/Jakarta
+
+# Network Configuration
+admin_ip_range: "{{ vault_admin_ip_range }}"
+monitoring_ip: "127.0.0.1"
+internal_network: "172.16.0.0/12"
+
+# DNS Configuration (Cloudflare)
+cloudflare_email: "{{ vault_cloudflare_email }}"
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+cloudflare_zone_id: "{{ vault_cloudflare_zone_id }}"
+
+# Let's Encrypt Configuration
+letsencrypt_email: "{{ vault_letsencrypt_email }}"
+letsencrypt_staging: false
+letsencrypt_dns_challenge: true
+
+# Docker Configuration
+docker_compose_version: "2.20.0"
+docker_network_prefix: "summitethic"
+docker_networks:
+  - name: frontend
+    internal: false
+    driver: bridge
+  - name: backend
+    internal: true
+    driver: bridge
+  - name: monitoring
+    internal: true
+    driver: bridge
+  - name: mail
+    internal: false
+    driver: bridge
+
+# Database Configuration
+postgres_version: "15"
+postgres_encoding: "UTF8"
+postgres_locale: "en_US.UTF-8"
+postgres_data_dir: "/opt/summitethic/data/postgres"
+
+# Backup Configuration
+backup_encryption_enabled: true
+backup_encryption_key: "{{ vault_backup_encryption_key }}"
+backup_compression: true
+backup_verify: true
+backup_notify_on_failure: true
+backup_notify_email: "{{ vault_backup_notify_email }}"
+
+# Monitoring Configuration
+monitoring_retention_days: 30
+monitoring_scrape_interval: 15s
+monitoring_evaluation_interval: 15s
+alerting_rules:
+  - name: high_cpu_usage
+    threshold: 80
+    duration: 5m
+    severity: warning
+  - name: high_memory_usage
+    threshold: 85
+    duration: 5m
+    severity: warning
+  - name: disk_space_low
+    threshold: 20
+    duration: 5m
+    severity: critical
+  - name: service_down
+    duration: 2m
+    severity: critical
+
+# Security Configuration
+security_auto_updates: true
+security_fail2ban_enabled: true
+security_fail2ban_configs:
+  - name: sshd
+    port: ssh
+    maxretry: 3
+    bantime: 3600
+  - name: docker
+    port: docker
+    maxretry: 5
+    bantime: 1800
+
+# Notification Configuration
+notification_channels:
+  - type: email
+    enabled: true
+    smtp_host: "mail.{{ domain_name }}"
+    smtp_port: 587
+    smtp_user: "notifications@{{ domain_name }}"
+    smtp_password: "{{ vault_smtp_password }}"
+  - type: slack
+    enabled: false
+    webhook_url: "{{ vault_slack_webhook_url | default('') }}"
+  - type: telegram
+    enabled: false
+    bot_token: "{{ vault_telegram_bot_token | default('') }}"
+    chat_id: "{{ vault_telegram_chat_id | default('') }}"
+
+# Service Specific Configurations
+gitlab_config:
+  external_url: "https://git.{{ domain_name }}"
+  gitlab_rails:
+    time_zone: "{{ system_timezone }}"
+    gitlab_email_enabled: true
+    gitlab_email_from: "gitlab@{{ domain_name }}"
+    gitlab_email_display_name: "{{ organization_name }} GitLab"
+  gitlab_pages:
+    enabled: true
+    external_url: "https://pages.{{ domain_name }}"
+  registry:
+    enabled: true
+    external_url: "https://registry.{{ domain_name }}"
+
+mailcow_config:
+  hostname: "mail.{{ domain_name }}"
+  timezone: "{{ system_timezone }}"
+  admin_email: "{{ vault_mailcow_admin_email }}"
+  admin_password: "{{ vault_mailcow_admin_password }}"
+  api_key: "{{ vault_mailcow_api_key }}"
+  api_allow_from: "{{ internal_network }}"
+  
+mautic_config:
+  site_url: "https://marketing.{{ domain_name }}"
+  admin_email: "{{ vault_mautic_admin_email }}"
+  admin_password: "{{ vault_mautic_admin_password }}"
+  db_name: mautic
+  db_user: mautic
+  db_password: "{{ vault_mautic_db_password }}"
+  
+wordpress_config:
+  site_url: "https://{{ domain_name }}"
+  site_title: "{{ organization_name }}"
+  admin_user: "{{ vault_wordpress_admin_user }}"
+  admin_password: "{{ vault_wordpress_admin_password }}"
+  admin_email: "{{ vault_wordpress_admin_email }}"
+  db_name: wordpress
+  db_user: wordpress
+  db_password: "{{ vault_wordpress_db_password }}"
+  
+matomo_config:
+  site_url: "https://analytics.{{ domain_name }}"
+  admin_user: "{{ vault_matomo_admin_user }}"
+  admin_password: "{{ vault_matomo_admin_password }}"
+  admin_email: "{{ vault_matomo_admin_email }}"
+  db_name: matomo
+  db_user: matomo
+  db_password: "{{ vault_matomo_db_password }}"
+
+# Compliance and Audit
+compliance_standards:
+  - GDPR
+  - ISO27001
+  - PCI-DSS
+  
+audit_log_retention_days: 365
+audit_log_location: "/var/log/summitethic/audit"
+audit_events:
+  - user_login
+  - user_logout
+  - configuration_change
+  - service_start
+  - service_stop
+  - backup_success
+  - backup_failure
+  - security_alert
+
+# Resource Limits (untuk sustainability)
+resource_limits:
+  default_memory_limit: "512M"
+  default_cpu_limit: "0.5"
+  max_memory_per_container: "4G"
+  max_cpu_per_container: "2"
+
+# Tags for organization
+tags:
+  environment: "{{ environment }}"
+  managed_by: ansible
+  organization: "{{ organization_name }}"
+  ethical: "true"

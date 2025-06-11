@@ -1,5 +1,5 @@
 ---
-# site.yml - Main orchestration playbook for SummitEthic Infrastructure
+# playbooks/site.yml - Main orchestration playbook for SummitEthic Infrastructure
 # Ethical Principle: Transparency through Infrastructure as Code
 # All changes are auditable and version controlled
 

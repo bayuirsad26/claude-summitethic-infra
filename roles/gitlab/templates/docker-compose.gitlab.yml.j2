@@ -1,0 +1,121 @@
+---
+# roles/gitlab/templates/docker-compose.gitlab.yml.j2
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:{{ gitlab_version | default('latest') }}
+    container_name: gitlab
+    restart: unless-stopped
+    hostname: 'git.{{ domain_name }}'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        # External URL configuration
+        external_url 'https://git.{{ domain_name }}'
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = {
+          "X-Forwarded-Proto" => "https",
+          "X-Forwarded-Ssl" => "on"
+        }
+        
+        # GitLab Rails configuration
+        gitlab_rails['time_zone'] = '{{ system_timezone }}'
+        gitlab_rails['gitlab_email_enabled'] = true
+        gitlab_rails['gitlab_email_from'] = 'gitlab@{{ domain_name }}'
+        gitlab_rails['gitlab_email_display_name'] = '{{ organization_name }} GitLab'
+        
+        # Database configuration
+        postgresql['shared_buffers'] = "256MB"
+        postgresql['max_connections'] = 200
+        
+        # Redis configuration
+        redis['maxmemory'] = "256MB"
+        redis['maxmemory_policy'] = "allkeys-lru"
+        
+        # Monitoring
+        prometheus_monitoring['enable'] = true
+        grafana['enable'] = false
+        
+        # Registry
+        registry_external_url 'https://registry.{{ domain_name }}'
+        gitlab_rails['registry_enabled'] = true
+        registry['enable'] = true
+        registry_nginx['listen_port'] = 5000
+        registry_nginx['listen_https'] = false
+        
+        # Pages
+        pages_external_url 'https://pages.{{ domain_name }}'
+        gitlab_pages['enable'] = true
+        
+        # Backup
+        gitlab_rails['backup_keep_time'] = 604800
+        gitlab_rails['backup_upload_connection'] = {
+          'provider' => 'Local',
+          'local_root' => '/var/opt/gitlab/backups'
+        }
+        
+        # Performance tuning
+        unicorn['worker_processes'] = 4
+        unicorn['worker_timeout'] = 60
+        
+        # Ethical features
+        gitlab_rails['usage_ping_enabled'] = false
+        gitlab_rails['sentry_enabled'] = false
+    ports:
+      - "8022:22"  # GitLab SSH
+    volumes:
+      - ./config:/etc/gitlab
+      - ./data:/var/opt/gitlab
+      - ./logs:/var/log/gitlab
+    networks:
+      - frontend
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: {{ services | selectattr('name', 'equalto', 'gitlab') | map(attribute='resources.memory') | first | default('4G') }}
+          cpus: '{{ services | selectattr('name', 'equalto', 'gitlab') | map(attribute='resources.cpu') | first | default('2') }}'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/-/health || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 600s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=gitlab,component=main"
+
+  gitlab-runner:
+    image: gitlab/gitlab-runner:{{ gitlab_runner_version | default('latest') }}
+    container_name: gitlab-runner
+    restart: unless-stopped
+    volumes:
+      - /opt/summitethic/apps/gitlab-runner/config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=gitlab,component=runner"
+
+networks:
+  frontend:
+    external: true
+  backend:
+    external: true

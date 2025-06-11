@@ -1,0 +1,162 @@
+---
+# roles/mautic/tasks/main.yml
+# Mautic installation for ethical marketing automation
+
+- name: Create Mautic directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: www-data
+    group: docker
+    mode: '0755'
+  loop:
+    - /opt/summitethic/apps/mautic
+    - /opt/summitethic/apps/mautic/config
+    - /opt/summitethic/apps/mautic/data
+    - /opt/summitethic/apps/mautic/logs
+    - /opt/summitethic/apps/mautic/media
+
+- name: Deploy Mautic docker-compose file
+  template:
+    src: docker-compose.mautic.yml.j2
+    dest: /opt/summitethic/apps/mautic/docker-compose.yml
+    owner: root
+    group: docker
+    mode: '0640'
+
+- name: Deploy Mautic configuration
+  template:
+    src: mautic-config.php.j2
+    dest: /opt/summitethic/apps/mautic/config/local.php
+    owner: www-data
+    group: docker
+    mode: '0640'
+  notify: clear mautic cache
+
+- name: Create Mautic database
+  docker_container:
+    name: mautic-db-init
+    image: postgres:{{ postgres_version }}
+    state: started
+    cleanup: yes
+    detach: no
+    networks:
+      - backend
+    env:
+      POSTGRES_USER: "{{ mautic_config.db_user }}"
+      POSTGRES_PASSWORD: "{{ mautic_config.db_password }}"
+      POSTGRES_DB: "{{ mautic_config.db_name }}"
+    command: |
+      sh -c "
+      psql -U postgres -c \"CREATE USER {{ mautic_config.db_user }} WITH PASSWORD '{{ mautic_config.db_password }}';\"
+      psql -U postgres -c \"CREATE DATABASE {{ mautic_config.db_name }} OWNER {{ mautic_config.db_user }};\"
+      psql -U postgres -c \"GRANT ALL PRIVILEGES ON DATABASE {{ mautic_config.db_name }} TO {{ mautic_config.db_user }};\"
+      "
+
+- name: Start Mautic containers
+  docker_compose:
+    project_src: /opt/summitethic/apps/mautic
+    state: present
+    pull: yes
+    recreate: smart
+
+- name: Wait for Mautic to be ready
+  uri:
+    url: "http://localhost:8083/s/login"
+    status_code: 200
+  register: mautic_ready
+  until: mautic_ready.status == 200
+  retries: 30
+  delay: 10
+
+- name: Configure Mautic for Traefik
+  docker_container:
+    name: mautic
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.mautic.rule: "Host(`marketing.{{ domain_name }}`)"
+      traefik.http.routers.mautic.entrypoints: "websecure"
+      traefik.http.routers.mautic.tls: "true"
+      traefik.http.routers.mautic.tls.certresolver: "letsencrypt"
+      traefik.http.services.mautic.loadbalancer.server.port: "80"
+      traefik.http.routers.mautic.middlewares: "security-headers@file"
+
+- name: Configure Mautic cron jobs
+  cron:
+    name: "{{ item.name }}"
+    minute: "{{ item.minute }}"
+    hour: "{{ item.hour }}"
+    job: "docker exec mautic php /var/www/html/bin/console {{ item.command }} --no-interaction --no-ansi"
+    user: root
+    state: present
+  loop:
+    - { name: "Mautic segments update", minute: "*/5", hour: "*", command: "mautic:segments:update" }
+    - { name: "Mautic campaigns rebuild", minute: "*/5", hour: "*", command: "mautic:campaigns:rebuild" }
+    - { name: "Mautic campaigns trigger", minute: "*/5", hour: "*", command: "mautic:campaigns:trigger" }
+    - { name: "Mautic emails send", minute: "*/5", hour: "*", command: "mautic:emails:send" }
+    - { name: "Mautic email fetch", minute: "*/15", hour: "*", command: "mautic:email:fetch" }
+    - { name: "Mautic social monitoring", minute: "0", hour: "*/4", command: "mautic:social:monitoring" }
+    - { name: "Mautic webhooks process", minute: "*/10", hour: "*", command: "mautic:webhooks:process" }
+    - { name: "Mautic cleanup", minute: "0", hour: "3", command: "mautic:maintenance:cleanup --days-old=30" }
+
+- name: Configure Mautic ethical settings
+  shell: |
+    docker exec mautic php /var/www/html/bin/console mautic:config:set \
+      do_not_track_enabled=1 \
+      anonymize_ip=1 \
+      unsubscribe_text="You are receiving this email because you subscribed to our list. You can unsubscribe at any time." \
+      postal_address="{{ organization_name }}, {{ organization_city }}, {{ organization_country }}" \
+      default_signature="Best regards,<br>{{ organization_name }} Team<br><br><small>This email was sent in accordance with GDPR and ethical marketing practices.</small>"
+  register: mautic_config_result
+  changed_when: mautic_config_result.rc == 0
+
+- name: Create Mautic backup script
+  template:
+    src: mautic-backup.sh.j2
+    dest: /opt/summitethic/scripts/mautic-backup.sh
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Set up Mautic backup cron job
+  cron:
+    name: "Mautic backup"
+    minute: "0"
+    hour: "3"
+    job: "/opt/summitethic/scripts/mautic-backup.sh >> /var/log/summitethic/mautic-backup.log 2>&1"
+    user: root
+    state: present
+
+- name: Configure Mautic GDPR compliance
+  uri:
+    url: "http://localhost:8083/api/config/edit"
+    method: PATCH
+    headers:
+      Authorization: "Basic {{ (mautic_config.admin_user + ':' + mautic_config.admin_password) | b64encode }}"
+    body_format: json
+    body:
+      config:
+        gdpr_enabled: true
+        gdpr_delete_days: 30
+        gdpr_anonymize: true
+        track_private_ip_ranges: false
+        track_contact_by_ip: false
+
+- name: Log Mautic deployment
+  lineinfile:
+    path: /var/log/summitethic/infrastructure-audit.log
+    line: |
+      {{ ansible_date_time.iso8601 }} - Mautic deployed
+      - URL: https://marketing.{{ domain_name }}
+      - Features enabled:
+        - Email marketing
+        - Marketing automation
+        - Lead scoring
+        - Campaign management
+        - Social media monitoring
+      - Ethical features:
+        - Do Not Track honored
+        - IP anonymization
+        - GDPR compliance
+        - Clear unsubscribe options
+        - Data retention policies
